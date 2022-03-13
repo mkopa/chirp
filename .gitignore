@@ -1,7 +1,6 @@
-.*\~$
-.*\.pyc$
-.*\.orig$
-.*\.rej$
+*.pyc
+*.orig
+*.rej
 dist
 build/bdist
 tools/cpep8.venv/
@@ -15,6 +14,7 @@ archived_builds/
 .*\.pot$
 locale/.files
 MANIFEST
+.hg/
 
 
 # for visual studio and visual studio code editors
