@@ -15,7 +15,6 @@
 
 from chirp import util
 
-
 class MemoryMap:
     """
     A pythonic memory map interface
@@ -24,8 +23,7 @@ class MemoryMap:
     def __init__(self, data):
         self._data = list(data)
 
-    def printable(self, start=None, end=None):
-        """Return a printable representation of the memory map"""
+    def printable(self, start=None, end=None, printit=True):
         if not start:
             start = 0
 
@@ -34,17 +32,18 @@ class MemoryMap:
 
         string = util.hexprint(self._data[start:end])
 
+        if printit:
+            print string
+
         return string
 
     def get(self, start, length=1):
-        """Return a chunk of memory of @length bytes from @start"""
         if start == -1:
             return "".join(self._data[start:])
         else:
             return "".join(self._data[start:start+length])
 
     def set(self, pos, value):
-        """Set a chunk of memory at @pos to @value"""
         if isinstance(value, int):
             self._data[pos] = chr(value)
         elif isinstance(value, str):
@@ -52,11 +51,10 @@ class MemoryMap:
                 self._data[pos] = byte
                 pos += 1
         else:
-            raise ValueError("Unsupported type %s for value" %
-                             type(value).__name__)
+            raise ValueError("Unsupported type %s for value" % \
+                                 type(value).__name__)
 
     def get_packed(self):
-        """Return the entire memory map as raw data"""
         return "".join(self._data)
 
     def __len__(self):
@@ -82,12 +80,4 @@ class MemoryMap:
         return self.printable(printit=False)
 
     def truncate(self, size):
-        """Truncate the memory map to @size"""
         self._data = self._data[:size]
-
-
-# Py3 branch compatibility
-class MemoryMapBytes(MemoryMap):
-    def __init__(self, data):
-        # Expects data is a newbytes
-        MemoryMap.__init__(self, ''.join(chr(b) for b in data))

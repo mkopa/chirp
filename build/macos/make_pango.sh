@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 make_pango_modules() {
 	local src=$1

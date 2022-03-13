@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 VERSION=$(cat build/version)
 INCLUDE="COPYING"
@@ -13,7 +13,7 @@ DST="${TMP}/${RELDIR}"
 
 mkdir -p $DST
 
-cp -rav --parents chirp/*.py chirp/drivers/*.py csvdump/*.py chirp/ui/* $DST
+cp -rav --parents chirp/*.py csvdump/*.py chirpui/* $DST
 cp -av *.py ${DST}
 
 cp -rav $INCLUDE ${DST}

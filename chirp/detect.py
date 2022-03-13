@@ -14,50 +14,41 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import serial
-import logging
 
-from chirp import chirp_common, errors, directory
-from chirp.drivers import ic9x_ll, icf, kenwood_live, icomciv
-
-LOG = logging.getLogger(__name__)
-
-
-class DetectorRadio(chirp_common.Radio):
-    """Minimal radio for model detection"""
-    MUNCH_CLONE_RESP = False
-
-    def get_payload(self, data, raw, checksum):
-        return data
-
+from chirp import chirp_common, errors, idrp, util, icf, directory, ic9x_ll
+from chirp import kenwood_live, tmv71, tmv71_ll, icomciv, thd72
 
 def _icom_model_data_to_rclass(md):
-    for _rtype, rclass in directory.DRV_TO_RADIO.items():
+    for rtype, rclass in directory.DRV_TO_RADIO.items():
         if rclass.VENDOR != "Icom":
             continue
-        if not hasattr(rclass, 'get_model') or not rclass.get_model():
+        if not rclass._model:
             continue
-        if rclass.get_model()[:4] == md[:4]:
+        if rclass._model[:4] == md[:4]:
             return rclass
 
-    raise errors.RadioError("Unknown radio type %02x%02x%02x%02x" %
-                            (ord(md[0]), ord(md[1]), ord(md[2]), ord(md[3])))
+    raise errors.RadioError("Unknown radio type %02x%02x%02x%02x" %\
+                                (ord(md[0]),
+                                 ord(md[1]),
+                                 ord(md[2]),
+                                 ord(md[3])))
 
-
-def _detect_icom_radio(ser):
+def _detect_icom_radio(s):
     # ICOM VHF/UHF Clone-type radios @ 9600 baud
 
     try:
-        ser.baudrate = 9600
-        md = icf.get_model_data(DetectorRadio(ser))
+        s.setBaudrate(9600)
+        md = icf.get_model_data(s)
         return _icom_model_data_to_rclass(md)
     except errors.RadioError, e:
-        LOG.error("_detect_icom_radio: %s", e)
+        print e
+        pass
 
     # ICOM IC-91/92 Live-mode radios @ 4800/38400 baud
 
-    ser.baudrate = 4800
+    s.setBaudrate(4800)
     try:
-        ic9x_ll.send_magic(ser)
+        ic9x_ll.send_magic(s)
         return _icom_model_data_to_rclass("ic9x")
     except errors.RadioError:
         pass
@@ -66,39 +57,36 @@ def _detect_icom_radio(ser):
 
     for rate in [9600, 4800, 19200]:
         try:
-            ser.baudrate = rate
-            return icomciv.probe_model(ser)
+            s.setBaudrate(rate)
+            return icomciv.probe_model(s)
         except errors.RadioError:
             pass
 
-    ser.close()
+    s.close()
 
     raise errors.RadioError("Unable to get radio model")
 
-
 def detect_icom_radio(port):
-    """Detect which Icom model is connected to @port"""
-    ser = serial.Serial(port=port, timeout=0.5)
+    s = serial.Serial(port=port, timeout=0.5)
 
     try:
-        result = _detect_icom_radio(ser)
+        result = _detect_icom_radio(s)
     except Exception:
-        ser.close()
+        s.close()
         raise
 
-    ser.close()
+    s.close()
 
-    LOG.info("Auto-detected %s %s on %s" %
-             (result.VENDOR, result.MODEL, port))
+    print "Auto-detected %s %s on %s" % (result.VENDOR,
+                                         result.MODEL,
+                                         port)
 
     return result
 
-
 def detect_kenwoodlive_radio(port):
-    """Detect which Kenwood model is connected to @port"""
-    ser = serial.Serial(port=port, baudrate=9600, timeout=0.5)
-    r_id = kenwood_live.get_id(ser)
-    ser.close()
+    s = serial.Serial(port=port, baudrate=9600, timeout=0.5)
+    r_id = kenwood_live.get_id(s)
+    s.close()
 
     models = {}
     for rclass in directory.DRV_TO_RADIO.values():
@@ -111,6 +99,11 @@ def detect_kenwoodlive_radio(port):
         raise errors.RadioError("Unsupported model `%s'" % r_id)
 
 DETECT_FUNCTIONS = {
-    "Icom":    detect_icom_radio,
-    "Kenwood": detect_kenwoodlive_radio,
+    "Icom" : detect_icom_radio,
+    "Kenwood" : detect_kenwoodlive_radio,
 }
+
+if __name__ == "__main__":
+    import sys
+
+    print "Found %s" % detect_radio(sys.argv[1])

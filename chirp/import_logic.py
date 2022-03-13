@@ -13,24 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import logging
 from chirp import chirp_common, errors
 
-LOG = logging.getLogger(__name__)
-
-
 class ImportError(Exception):
-    """An import error"""
     pass
-
 
 class DestNotCompatible(ImportError):
-    """Memory is not compatible with the destination radio"""
     pass
 
-
 def ensure_has_calls(radio, memory):
-    """Make sure @radio has the necessary D-STAR callsigns for @memory"""
     ulist_changed = rlist_changed = False
 
     ulist = radio.get_urcall_list()
@@ -43,8 +34,7 @@ def ensure_has_calls(radio, memory):
                 ulist_changed = True
                 break
         if not ulist_changed:
-            raise errors.RadioError("No room to add callsign %s" %
-                                    memory.dv_urcall)
+            raise ImportError("No room to add callsign %s" % memory.dv_urcall)
 
     rlist_add = []
     if memory.dv_rpt1call and memory.dv_rpt1call not in rlist:
@@ -66,15 +56,13 @@ def ensure_has_calls(radio, memory):
     if ulist_changed:
         radio.set_urcall_list(ulist)
     if rlist_changed:
-        radio.set_repeater_call_list(rlist)
-
+        radio.set_repeater_cal_list(rlist)
 
 # Filter the name according to the destination's rules
-def _import_name(dst_radio, _srcrf, mem):
+def _import_name(dst_radio, srcrf, mem):
     mem.name = dst_radio.filter_name(mem.name)
 
-
-def _import_power(dst_radio, _srcrf, mem):
+def _import_power(dst_radio, srcrf, mem):
     levels = dst_radio.get_features().valid_power_levels
     if not levels:
         mem.power = None
@@ -83,7 +71,7 @@ def _import_power(dst_radio, _srcrf, mem):
         # Source radio did not support power levels, so choose the
         # first (highest) level from the destination radio.
         mem.power = levels[0]
-        return
+        return 
 
     # If both radios support power levels, we need to decide how to
     # convert the source power level to a valid one for the destination
@@ -93,7 +81,6 @@ def _import_power(dst_radio, _srcrf, mem):
 
     deltas = [abs(mem.power - power) for power in levels]
     mem.power = levels[deltas.index(min(deltas))]
-
 
 def _import_tone(dst_radio, srcrf, mem):
     dstrf = dst_radio.get_features()
@@ -113,160 +100,67 @@ def _import_tone(dst_radio, srcrf, mem):
         if mem.tmode == "TSQL":
             mem.ctone = mem.rtone
 
-
-def _import_dtcs(dst_radio, srcrf, mem):
-    dstrf = dst_radio.get_features()
-
-    # Some radios keep separate DTCS codes for tx and rx
-    # If we're importing to or from radios with differing models,
-    # do the conversion here.
-
-    if srcrf.has_rx_dtcs and not dstrf.has_rx_dtcs:
-        # If copying from a radio with separate codes to a radio
-        # without, and the tmode is DTCS, then use the rx_dtcs value
-        if mem.tmode == "DTCS":
-            mem.dtcs = mem.rx_dtcs
-    elif not srcrf.has_rx_dtcs and dstrf.has_rx_dtcs:
-        # If copying from a radio without separate codes to a radio
-        # with it, set the dest rx_dtcs to the src dtcs
-        if mem.tmode == "DTCS":
-            mem.rx_dtcs = mem.dtcs
-
-
-def _guess_mode_by_frequency(freq):
-    ranges = [
-        (0, 136000000, "AM"),
-        (136000000, 9999000000, "FM"),
-        ]
-
-    for lo, hi, mode in ranges:
-        if freq > lo and freq <= hi:
-            return mode
-
-    # If we don't know, assume FM
-    return "FM"
-
-
-def _import_mode(dst_radio, srcrf, mem):
-    dstrf = dst_radio.get_features()
-
-    # Some radios support an "Auto" mode. If we're importing from one
-    # that does to one that does not, guess at the proper mode based on the
-    # frequency
-
-    if mem.mode == "Auto" and mem.mode not in dstrf.valid_modes:
-        mode = _guess_mode_by_frequency(mem.freq)
-        if mode not in dstrf.valid_modes:
-            raise DestNotCompatible("Destination does not support %s" % mode)
-        mem.mode = mode
-
-
-def _make_offset_with_split(rxfreq, txfreq):
-    offset = txfreq - rxfreq
-
-    if offset == 0:
-        return "", offset
-    elif offset > 0:
-        return "+", offset
-    elif offset < 0:
-        return "-", offset * -1
-
-
-def _import_duplex(dst_radio, srcrf, mem):
-    dstrf = dst_radio.get_features()
-
-    # If a radio does not support odd split, we can use an equivalent offset
-    if mem.duplex == "split" and mem.duplex not in dstrf.valid_duplexes:
-        mem.duplex, mem.offset = _make_offset_with_split(mem.freq, mem.offset)
-
-        # Enforce maximum offset
-        ranges = [(0,          500000000, 15000000),
-                  (500000000, 3000000000, 50000000),
-                  ]
-        for lo, hi, limit in ranges:
-            if lo < mem.freq <= hi:
-                if abs(mem.offset) > limit:
-                    raise DestNotCompatible("Unable to create import memory: "
-                                            "offset is abnormally large.")
-
-
 def import_mem(dst_radio, src_features, src_mem, overrides={}):
-    """Perform import logic to create a destination memory from
-    src_mem that will be compatible with @dst_radio"""
     dst_rf = dst_radio.get_features()
 
     if isinstance(src_mem, chirp_common.DVMemory):
         if not isinstance(dst_radio, chirp_common.IcomDstarSupport):
-            raise DestNotCompatible(
-                "Destination radio does not support D-STAR")
+            raise DestNotCompatible("Destination radio does not support D-STAR")
         if dst_rf.requires_call_lists:
             ensure_has_calls(dst_radio, src_mem)
 
     dst_mem = src_mem.dupe()
-    # The source's immutable list almost definitely does not match the
-    # latter, so eliminate that list here and rely on set_memory() on
-    # the destination to enforce anything that should not be set.
-    dst_mem.immutable = []
-
-    for k, v in overrides.items():
-        dst_mem.__dict__[k] = v
 
     helpers = [_import_name,
                _import_power,
                _import_tone,
-               _import_dtcs,
-               _import_mode,
-               _import_duplex,
                ]
 
     for helper in helpers:
         helper(dst_radio, src_features, dst_mem)
 
+    for k, v in overrides.items():
+        dst_mem.__dict__[k] = v
+
     msgs = dst_radio.validate_memory(dst_mem)
-    errs = [x for x in msgs if isinstance(x, chirp_common.ValidationError)]
-    if errs:
-        raise DestNotCompatible("Unable to create import memory: %s" %
-                                ", ".join(errs))
+    errors = [x for x in msgs if isinstance(x, chirp_common.ValidationError)]
+    if errors:
+        raise DestNotCompatible("Unable to create import memory: %s" %\
+                                    ", ".join(errors))
 
     return dst_mem
-
-
-def _get_bank_model(radio):
-    for model in radio.get_mapping_models():
-        if isinstance(model, chirp_common.BankModel):
-            return model
-    return None
-
-
+        
 def import_bank(dst_radio, src_radio, dst_mem, src_mem):
     """Attempt to set the same banks for @mem(by index) in @dst_radio that
     it has in @src_radio"""
 
-    dst_bm = _get_bank_model(dst_radio)
+    dst_bm = dst_radio.get_bank_model()
     if not dst_bm:
         return
 
-    dst_banks = dst_bm.get_mappings()
+    dst_banks = dst_bm.get_banks()
 
-    src_bm = _get_bank_model(src_radio)
+    src_bm = src_radio.get_bank_model()
     if not src_bm:
         return
 
-    src_banks = src_bm.get_mappings()
-    src_mem_banks = src_bm.get_memory_mappings(src_mem)
+    src_banks = src_bm.get_banks()
+    src_mem_banks = src_bm.get_memory_banks(src_mem)
     src_indexes = [src_banks.index(b) for b in src_mem_banks]
 
-    for bank in dst_bm.get_memory_mappings(dst_mem):
-        dst_bm.remove_memory_from_mapping(dst_mem, bank)
+    for bank in dst_bm.get_memory_banks(dst_mem):
+        dst_bm.remove_memory_from_bank(dst_mem, bank)
 
     for index in src_indexes:
         try:
             bank = dst_banks[index]
-            LOG.debug("Adding memory to bank %s" % bank)
-            dst_bm.add_memory_to_mapping(dst_mem, bank)
-            if isinstance(dst_bm, chirp_common.MappingModelIndexInterface):
+            print "Adding memory to bank %s" % bank
+            dst_bm.add_memory_to_bank(dst_mem, bank)
+            if isinstance(dst_bm, chirp_common.BankIndexInterface):
                 dst_bm.set_memory_index(dst_mem, bank,
-                                        dst_bm.get_next_mapping_index(bank))
+                                        dst_bm.get_next_bank_index(bank))
 
         except IndexError:
             pass
+
+    
