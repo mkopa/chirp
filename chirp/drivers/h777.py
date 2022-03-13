@@ -72,11 +72,11 @@ struct {
 } settings2;
 """
 
-CMD_ACK = "\x06"
+CMD_ACK = b"\x06"
 BLOCK_SIZE = 0x08
-UPLOAD_BLOCKS = [range(0x0000, 0x0110, 8),
-                 range(0x02b0, 0x02c0, 8),
-                 range(0x0380, 0x03e0, 8)]
+UPLOAD_BLOCKS = [list(range(0x0000, 0x0110, 8)),
+                 list(range(0x02b0, 0x02c0, 8)),
+                 list(range(0x0380, 0x03e0, 8))]
 
 # TODO: Is it 1 watt?
 H777_POWER_LEVELS = [chirp_common.PowerLevel("Low", watts=1.00),
@@ -95,13 +95,11 @@ SETTING_LISTS = {
 
 def _h777_enter_programming_mode(radio):
     serial = radio.pipe
-    # increase default timeout from .25 to .5 for all serial communications
-    serial.timeout = 0.5
 
     try:
-        serial.write("\x02")
+        serial.write(b"\x02")
         time.sleep(0.1)
-        serial.write("PROGRAM")
+        serial.write(b"PROGRAM")
         ack = serial.read(1)
     except:
         raise errors.RadioError("Error communicating with radio")
@@ -111,17 +109,21 @@ def _h777_enter_programming_mode(radio):
     elif ack != CMD_ACK:
         raise errors.RadioError("Radio refused to enter programming mode")
 
+    original_timeout = serial.timeout
     try:
-        serial.write("\x02")
+        serial.write(b"\x02")
         # At least one version of the Baofeng BF-888S has a consistent
         # ~0.33s delay between sending the first five bytes of the
         # version data and the last three bytes. We need to raise the
         # timeout so that the read doesn't finish early.
+        serial.timeout = 0.5
         ident = serial.read(8)
     except:
         raise errors.RadioError("Error communicating with radio")
+    finally:
+        serial.timeout = original_timeout
 
-    if not ident.startswith("P3107"):
+    if not ident.startswith(b"P3107"):
         LOG.debug(util.hexprint(ident))
         raise errors.RadioError("Radio returned unknown identification string")
 
@@ -138,7 +140,7 @@ def _h777_enter_programming_mode(radio):
 def _h777_exit_programming_mode(radio):
     serial = radio.pipe
     try:
-        serial.write("E")
+        serial.write(b"E")
     except:
         raise errors.RadioError("Radio refused to exit programming mode")
 
@@ -146,8 +148,8 @@ def _h777_exit_programming_mode(radio):
 def _h777_read_block(radio, block_addr, block_size):
     serial = radio.pipe
 
-    cmd = struct.pack(">cHb", 'R', block_addr, BLOCK_SIZE)
-    expectedresponse = "W" + cmd[1:]
+    cmd = struct.pack(">cHb", b'R', block_addr, BLOCK_SIZE)
+    expectedresponse = b"W" + cmd[1:]
     LOG.debug("Reading block %04x..." % (block_addr))
 
     try:
@@ -172,29 +174,33 @@ def _h777_read_block(radio, block_addr, block_size):
 def _h777_write_block(radio, block_addr, block_size):
     serial = radio.pipe
 
-    cmd = struct.pack(">cHb", 'W', block_addr, BLOCK_SIZE)
-    data = radio.get_mmap()[block_addr:block_addr + 8]
+    cmd = struct.pack(">cHb", b'W', block_addr, BLOCK_SIZE)
+    data = radio.get_mmap().get_byte_compatible()[block_addr:block_addr + 8]
 
     LOG.debug("Writing Data:")
     LOG.debug(util.hexprint(cmd + data))
 
+    original_timeout = serial.timeout
     try:
         serial.write(cmd + data)
         # Time required to write data blocks varies between individual
         # radios of the Baofeng BF-888S model. The longest seen is
         # ~0.31s.
+        serial.timeout = 0.5
         if serial.read(1) != CMD_ACK:
             raise Exception("No ACK")
     except:
         raise errors.RadioError("Failed to send block "
                                 "to radio at %04x" % block_addr)
+    finally:
+        serial.timeout = original_timeout
 
 
 def do_download(radio):
     LOG.debug("download")
     _h777_enter_programming_mode(radio)
 
-    data = ""
+    data = b""
 
     status = chirp_common.Status()
     status.msg = "Cloning from radio"
@@ -214,7 +220,7 @@ def do_download(radio):
 
     _h777_exit_programming_mode(radio)
 
-    return memmap.MemoryMap(data)
+    return memmap.MemoryMapBytes(data)
 
 
 def do_upload(radio):
@@ -265,11 +271,6 @@ class TenwayTW325Alias(chirp_common.Alias):
     MODEL = 'TW-325'
 
 
-class RetevisH777Alias(chirp_common.Alias):
-    VENDOR = 'Retevis'
-    MODEL = 'H777'
-
-
 @directory.register
 class H777Radio(chirp_common.CloneModeRadio):
     """HST H-777"""
@@ -278,9 +279,10 @@ class H777Radio(chirp_common.CloneModeRadio):
     VENDOR = "Baofeng"
     MODEL = "BF-888"
     BAUD_RATE = 9600
+    NEEDS_COMPAT_SERIAL = False
 
     ALIASES = [ArcshellAR5, ArcshellAR6, GV8SAlias, GV9SAlias, A8SAlias,
-               TenwayTW325Alias, RetevisH777Alias]
+               TenwayTW325Alias]
     SIDEKEYFUNCTION_LIST = ["Off", "Monitor", "Transmit Power", "Alarm"]
 
     # This code currently requires that ranges start at 0x0000
@@ -295,13 +297,12 @@ class H777Radio(chirp_common.CloneModeRadio):
 
     _ranges = [
         (0x0000, 0x0110),
-        (0x0380, 0x03E0),
         (0x02B0, 0x02C0),
+        (0x0380, 0x03E0),
     ]
     _memsize = 0x03E0
     _has_fm = True
     _has_sidekey = True
-    _has_scanmodes = True
 
     def get_features(self):
         rf = chirp_common.RadioFeatures()
@@ -422,7 +423,7 @@ class H777Radio(chirp_common.CloneModeRadio):
         _mem = self._memobj.memory[mem.number - 1]
 
         if mem.empty:
-            _mem.set_raw("\xFF" * (_mem.size() / 8))
+            _mem.set_raw("\xFF" * (_mem.size() // 8))
             return
 
         _mem.rxfreq = mem.freq / 10
@@ -480,13 +481,11 @@ class H777Radio(chirp_common.CloneModeRadio):
                           RadioSettingValueBoolean(_settings.scan))
         basic.append(rs)
 
-        if self._has_scanmodes:
-            rs = RadioSetting("settings2.scanmode", "Scan mode",
-                              RadioSettingValueList(
-                                  SCANMODE_LIST,
-                                  SCANMODE_LIST[
-                                      self._memobj.settings2.scanmode]))
-            basic.append(rs)
+        rs = RadioSetting("settings2.scanmode", "Scan mode",
+                          RadioSettingValueList(
+                              SCANMODE_LIST,
+                              SCANMODE_LIST[self._memobj.settings2.scanmode]))
+        basic.append(rs)
 
         rs = RadioSetting("vox", "VOX",
                           RadioSettingValueBoolean(_settings.vox))
@@ -577,7 +576,7 @@ class H777Radio(chirp_common.CloneModeRadio):
                     else:
                         LOG.debug("Setting %s = %s" % (setting, element.value))
                         setattr(obj, setting, element.value)
-                except Exception, e:
+                except Exception as e:
                     LOG.debug(element.get_name())
                     raise
 
@@ -636,19 +635,6 @@ class ROGA2SRadio(H777Radio):
     MODEL = "GA-2S"
     _has_fm = False
     SIDEKEYFUNCTION_LIST = ["Off", "Monitor", "Unused", "Alarm"]
-
-    @classmethod
-    def match_model(cls, filedata, filename):
-        # This model is only ever matched via metadata
-        return False
-
-
-@directory.register
-class H777PlusRadio(H777Radio):
-    VENDOR = "Retevis"
-    MODEL = "H777 Plus"
-    _has_fm = False
-    _has_scanmodes = False
 
     @classmethod
     def match_model(cls, filedata, filename):

@@ -19,6 +19,7 @@ import logging
 
 from chirp import chirp_common, settings
 from chirp.ui import miscwidgets, common
+from chirp.ui import compat
 
 LOG = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class ValueEditor:
 
         try:
             newval = self._get_value()
-        except ValueError, e:
+        except ValueError as e:
             self._errfn(self._name, str(e))
             return str(e)
 
@@ -76,11 +77,11 @@ class ValueEditor:
         else:
             try:
                 setattr(self._memory, self._name, newval)
-            except chirp_common.ImmutableValueError, e:
+            except chirp_common.ImmutableValueError as e:
                 if getattr(self._memory, self._name) != self._get_value():
                     self._errfn(self._name, str(e))
                     return str(e)
-            except ValueError, e:
+            except ValueError as e:
                 self._errfn(self._name, str(e))
                 return str(e)
 
@@ -97,7 +98,11 @@ class ValueEditor:
 
 class StringEditor(ValueEditor):
     def _init(self, data):
-        self._widget = gtk.Entry(int(data))
+        try:
+            self._widget = gtk.Entry(int(data))
+        except TypeError:
+            self._widget = gtk.Entry()
+            self._widget.set_max_length(int(data))
         self._widget.set_text(str(self._mem_value()))
         self._widget.connect("changed", self.changed)
 
@@ -126,13 +131,15 @@ class IntegerEditor(ValueEditor):
 
 class ChoiceEditor(ValueEditor):
     def _init(self, data):
-        self._widget = miscwidgets.make_choice([str(x) for x in data],
+        self._choice = miscwidgets.make_choice([str(x) for x in data],
                                                False,
                                                str(self._mem_value()))
+        self._widget = self._choice.widget
+
         self._widget.connect("changed", self.changed)
 
     def _get_value(self):
-        return self._widget.get_active_text()
+        return self._choice.value
 
     def changed(self, _widget):
         self.update()
@@ -194,7 +201,7 @@ class MemoryDetailEditor(gtk.Dialog):
 
     def _add(self, tab, row, name, editor, text, colindex=0):
         label = gtk.Label(text + ":")
-        label.set_alignment(1.0, 0.5)
+        label.set_alignment(0.0, 0.5)
         label.show()
         tab.attach(label, colindex, colindex + 1, row, row + 1,
                    xoptions=gtk.FILL, yoptions=0, xpadding=6, ypadding=3)
@@ -312,18 +319,14 @@ class MemoryDetailEditor(gtk.Dialog):
 
     def __init__(self, features, memory, parent=None):
         self._memory = memory
-        buttons = (gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
-                   gtk.STOCK_OK, gtk.RESPONSE_OK)
         gtk.Dialog.__init__(self,
                             title="Memory Properties",
                             flags=gtk.DIALOG_MODAL,
                             parent=parent,
-                            buttons=buttons)
-        self.set_default_response(gtk.RESPONSE_OK)
-        self.set_alternative_button_order([gtk.RESPONSE_OK,
-                                           gtk.RESPONSE_CANCEL])
+                            buttons=(gtk.STOCK_OK, gtk.RESPONSE_OK,
+                                     gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL))
         self.set_size_request(-1, 500)
-        self._tips = gtk.Tooltips()
+        self._tips = compat.CompatTooltips()
 
         self._features = features
 

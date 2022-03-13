@@ -14,11 +14,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import glob
 import os
 import tempfile
 import logging
+import sys
 
-from chirp.drivers import icf, rfinder
+import six
+
+from chirp.drivers import icf  # , rfinder
 from chirp import chirp_common, util, radioreference, errors
 
 LOG = logging.getLogger(__name__)
@@ -53,7 +57,7 @@ def register(cls):
     """Register radio @cls with the directory"""
     global DRV_TO_RADIO
     ident = radio_class_id(cls)
-    if ident in DRV_TO_RADIO.keys():
+    if ident in list(DRV_TO_RADIO.keys()):
         if ALLOW_DUPS:
             LOG.warn("Replacing existing driver id `%s'" % ident)
         else:
@@ -93,7 +97,7 @@ def icf_to_image(icf_file, img_file):
     mdata, mmap = icf.read_file(icf_file)
     img_data = None
 
-    for model in DRV_TO_RADIO.values():
+    for model in list(DRV_TO_RADIO.values()):
         try:
             if model._model == mdata:
                 img_data = mmap.get_packed()[:model._memsize]
@@ -110,25 +114,16 @@ def icf_to_image(icf_file, img_file):
         raise Exception("Unsupported model")
 
 
-# This is a mapping table of radio models that have changed in the past.
-# ideally we would never do this, but in the case where a radio was added
-# as the wrong model name, or a model has to be split, we need to be able
-# to open older files and do something intelligent with them.
-MODEL_COMPAT = {
-    ('Retevis', 'RT-5R'): ('Retevis', 'RT5R'),
-    ('Retevis', 'RT-5RV'): ('Retevis', 'RT5RV'),
-}
-
-
 def get_radio_by_image(image_file):
     """Attempt to get the radio class that owns @image_file"""
     if image_file.startswith("radioreference://"):
-        _, _, zipcode, username, password, country = image_file.split("/", 5)
+        _, _, zipcode, username, password = image_file.split("/", 4)
         rr = radioreference.RadioReferenceRadio(None)
-        rr.set_params(zipcode, username, password, country)
+        rr.set_params(zipcode, username, password)
         return rr
 
-    if image_file.startswith("rfinder://"):
+    # FIXME: Disable rfinder until the module is fixed
+    if image_file.startswith("rfinder://") and False:
         _, _, email, passwd, lat, lon, miles = image_file.split("/")
         rf = rfinder.RFinderRadio(None)
         rf.set_params((float(lat), float(lon)), int(miles), email, passwd)
@@ -141,35 +136,57 @@ def get_radio_by_image(image_file):
         image_file = tempf
 
     if os.path.exists(image_file):
-        f = file(image_file, "rb")
-        filedata = f.read()
-        f.close()
+        with open(image_file, "rb") as f:
+            filedata = f.read()
     else:
-        filedata = ""
+        filedata = b""
 
     data, metadata = chirp_common.FileBackedRadio._strip_metadata(filedata)
 
-    for rclass in DRV_TO_RADIO.values():
+    # NOTE: See warning below
+    if six.PY3:
+        filestring = ''.join(chr(c) for c in filedata)
+    else:
+        filestring = filedata
+
+    for rclass in list(DRV_TO_RADIO.values()):
         if not issubclass(rclass, chirp_common.FileBackedRadio):
             continue
 
-        # If no metadata, we do the old thing
-        if not metadata and rclass.match_model(filedata, image_file):
-            return rclass(image_file)
+        if not metadata:
+            # If no metadata, we do the old thing
+            error = None
+            try:
+                if rclass.match_model(filedata, image_file):
+                    return rclass(image_file)
+            except Exception as e:
+                error = e
 
-        meta_vendor = metadata.get('vendor')
-        meta_model = metadata.get('model')
+            # NOTE: For compatibility, try a straight up conversion to
+            # string and log a warning
+            if six.PY3:
+                try:
+                    if rclass.match_model(filestring, image_file):
+                        LOG.warning(('Radio driver %s needs py3 '
+                                     'match_model conversion!') % (
+                                         rclass.__name__))
+                        return rclass(image_file)
+                except Exception as e:
+                    error = e
 
-        meta_vendor, meta_model = MODEL_COMPAT.get((meta_vendor, meta_model),
-                                                   (meta_vendor, meta_model))
+            if error:
+                LOG.error('Radio class %s failed during detection: %s' % (
+                    rclass.__name__, error))
 
         # If metadata, then it has to match one of the aliases or the parent
         for alias in rclass.ALIASES + [rclass]:
-            if (alias.VENDOR == meta_vendor and alias.MODEL == meta_model):
+            if (alias.VENDOR == metadata.get('vendor') and
+                    alias.MODEL == metadata.get('model')):
 
                 class DynamicRadioAlias(rclass):
-                    VENDOR = meta_vendor
-                    MODEL = meta_model
+                    _orig_rclass = rclass
+                    VENDOR = metadata.get('vendor')
+                    MODEL = metadata.get('model')
                     VARIANT = metadata.get('variant')
 
                 return DynamicRadioAlias(image_file)
@@ -181,3 +198,32 @@ def get_radio_by_image(image_file):
         raise e
     else:
         raise errors.ImageDetectFailed("Unknown file format")
+
+
+def safe_import_drivers(limit=None):
+    if sys.platform == 'win32':
+        # Assume we are in a frozen win32 build, so we can not glob
+        # the driver files, but we do not need to anyway
+        import chirp.drivers
+        for module in chirp.drivers.__all__:
+            try:
+                __import__('chirp.drivers.%s' % module)
+            except Exception as e:
+                print('Failed to import %s: %s' % (module, e))
+        return
+
+    # Safe import of everything in chirp/drivers. We need to import them
+    # to get them to register, but should not abort if one import fails
+    chirp_module_base = os.path.dirname(os.path.abspath(__file__))
+    driver_files = glob.glob(os.path.join(chirp_module_base,
+                                          'drivers',
+                                          '*.py'))
+    for driver_file in driver_files:
+        module, ext = os.path.splitext(driver_file)
+        driver_module = os.path.basename(module)
+        if limit and driver_module not in limit:
+            continue
+        try:
+            __import__('chirp.drivers.%s' % driver_module)
+        except Exception as e:
+            print('Failed to import %s: %s' % (module, e))

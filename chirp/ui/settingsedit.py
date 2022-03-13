@@ -48,9 +48,8 @@ class SettingsEditor(common.Editor):
         self._store = gtk.TreeStore(gobject.TYPE_STRING, gobject.TYPE_INT)
         self._view = gtk.TreeView(self._store)
         self._view.get_selection().connect("changed", self._view_changed_cb)
-        column = gtk.TreeViewColumn("", gtk.CellRendererText(), text=0)
-        column.set_widget(gtk.Label())
-        self._view.append_column(column)
+        self._view.append_column(
+            gtk.TreeViewColumn("", gtk.CellRendererText(), text=0))
         self._view.show()
         scrolled_window = gtk.ScrolledWindow()
         scrolled_window.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -97,7 +96,7 @@ class SettingsEditor(common.Editor):
         elif isinstance(value, settings.RadioSettingValueBoolean):
             value.set_value(widget.get_active())
         elif isinstance(value, settings.RadioSettingValueList):
-            value.set_value(widget.get_active_text())
+            value.set_value(widget.value)
         elif isinstance(value, settings.RadioSettingValueString):
             value.set_value(widget.get_text())
         else:
@@ -110,7 +109,7 @@ class SettingsEditor(common.Editor):
     def _save_setting(self, widget, value):
         try:
             self._do_save_setting(widget, value)
-        except settings.InvalidValueError, e:
+        except settings.InvalidValueError as e:
             common.show_error(_("Invalid setting value: %s") % e)
 
     def _build_ui_tab(self, group):
@@ -136,7 +135,7 @@ class SettingsEditor(common.Editor):
 
             # Label
             label = gtk.Label(element.get_shortname() + ":")
-            label.set_alignment(1.0, 0.5)
+            label.set_alignment(0.0, 0.5)
             label.show()
 
             table.attach(label, 0, 1, row, row + 1,
@@ -156,7 +155,7 @@ class SettingsEditor(common.Editor):
                          xoptions=gtk.FILL, yoptions=0,
                          xpadding=12, ypadding=3)
 
-            for i in element.keys():
+            for i in list(element.keys()):
                 value = element[i]
                 if isinstance(value, settings.RadioSettingValueInteger):
                     widget = gtk.SpinButton()
@@ -176,15 +175,14 @@ class SettingsEditor(common.Editor):
                     widget.set_active(value.get_value())
                     widget.connect("toggled", self._save_setting, value)
                 elif isinstance(value, settings.RadioSettingValueList):
-                    widget = miscwidgets.make_choice([], editable=False)
-                    model = widget.get_model()
+                    choice = miscwidgets.make_choice([], editable=False)
+                    model = choice.get_model()
                     model.clear()
                     for option in value.get_options():
-                        widget.append_text(option)
-                    current = value.get_value()
-                    index = value.get_options().index(current)
-                    widget.set_active(index)
-                    widget.connect("changed", self._save_setting, value)
+                        choice.append_text(option)
+                    choice.value = value.get_value()
+                    widget = choice.widget
+                    choice.connect("changed", self._save_setting, value)
                 elif isinstance(value, settings.RadioSettingValueString):
                     widget = gtk.Entry()
                     widget.set_width_chars(32)

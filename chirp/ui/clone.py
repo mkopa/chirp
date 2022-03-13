@@ -45,8 +45,7 @@ class CloneSettings:
 
 class CloneSettingsDialog(gtk.Dialog):
     def __make_field(self, label, widget):
-        l = gtk.Label(label + ":")
-        l.set_alignment(1.0, 0.5)
+        l = gtk.Label(label)
         self.__table.attach(l, 0, 1, self.__row, self.__row+1)
         self.__table.attach(widget, 1, 2, self.__row, self.__row+1)
         self.__row += 1
@@ -73,9 +72,9 @@ class CloneSettingsDialog(gtk.Dialog):
     def __make_model(self):
         return miscwidgets.make_choice([], False)
 
-    def __make_vendor(self, model):
+    def __make_vendor(self, modelbox):
         vendors = collections.defaultdict(list)
-        for rclass in sorted(directory.DRV_TO_RADIO.values()):
+        for name, rclass in sorted(directory.DRV_TO_RADIO.items()):
             if not issubclass(rclass, chirp_common.CloneModeRadio) and \
                     not issubclass(rclass, chirp_common.LiveRadio):
                 continue
@@ -91,34 +90,36 @@ class CloneSettingsDialog(gtk.Dialog):
             conf.set("last_vendor", sorted(vendors.keys())[0])
 
         last_vendor = conf.get("last_vendor")
-        if last_vendor not in vendors.keys():
-            last_vendor = vendors.keys()[0]
+        if last_vendor not in list(vendors.keys()):
+            last_vendor = list(vendors.keys())[0]
 
         v = miscwidgets.make_choice(sorted(vendors.keys()), False, last_vendor)
 
-        def _changed(box, vendors, model):
-            models = vendors[box.get_active_text()]
+        def _changed(box, vendors, boxes):
+            (vendorbox, modelbox) = boxes
+            models = vendors[vendorbox.value]
 
             added_models = []
 
-            model.get_model().clear()
-            for rclass in sorted(models, key=lambda c: c.MODEL):
+            model_store = modelbox.get_model()
+            model_store.clear()
+            for rclass in sorted(models, key=lambda c: c.__name__):
                 if rclass.MODEL not in added_models:
-                    model.append_text(rclass.MODEL)
+                    model_store.append([rclass.MODEL])
                     added_models.append(rclass.MODEL)
 
-            if box.get_active_text() in detect.DETECT_FUNCTIONS:
-                model.insert_text(0, _("Detect"))
+            if vendorbox.value in detect.DETECT_FUNCTIONS:
+                model_store.append([_("Detect")])
                 added_models.insert(0, _("Detect"))
 
             model_names = [x.MODEL for x in models]
             if conf.get("last_model") in model_names:
-                model.set_active(added_models.index(conf.get("last_model")))
-            else:
-                model.set_active(0)
+                modelbox.value = conf.get("last_model")
+            elif added_models:
+                modelbox.value = added_models[0]
 
-        v.connect("changed", _changed, vendors, model)
-        _changed(v, vendors, model)
+        v.widget.connect("changed", _changed, vendors, (v, modelbox))
+        _changed(v, vendors, (v, modelbox))
 
         return v
 
@@ -132,17 +133,15 @@ class CloneSettingsDialog(gtk.Dialog):
         self.__modl = self.__make_model()
         self.__vend = self.__make_vendor(self.__modl)
 
-        self.__make_field(_("Port"), self.__port)
-        self.__make_field(_("Vendor"), self.__vend)
-        self.__make_field(_("Model"), self.__modl)
+        self.__make_field(_("Port"), self.__port.widget)
+        self.__make_field(_("Vendor"), self.__vend.widget)
+        self.__make_field(_("Model"), self.__modl.widget)
 
         if settings and settings.radio_class:
-            common.combo_select(self.__vend, settings.radio_class.VENDOR)
-            self.__modl.get_model().clear()
-            self.__modl.append_text(settings.radio_class.MODEL)
-            common.combo_select(self.__modl, settings.radio_class.MODEL)
-            self.__vend.set_sensitive(False)
-            self.__modl.set_sensitive(False)
+            self.__vend.value = settings.radio_class.VENDOR
+            self.__modl.value = settings.radio_class.MODEL
+            self.__vend.widget.set_sensitive(False)
+            self.__modl.widget.set_sensitive(False)
 
         self.__table.show()
         self.vbox.pack_start(self.__table, 1, 1, 1)
@@ -152,23 +151,25 @@ class CloneSettingsDialog(gtk.Dialog):
                    gtk.STOCK_OK, gtk.RESPONSE_OK)
         gtk.Dialog.__init__(self, title,
                             parent=parent,
-                            buttons=buttons,
                             flags=gtk.DIALOG_MODAL)
-        self.set_default_response(gtk.RESPONSE_OK)
-        self.set_alternative_button_order([gtk.RESPONSE_OK,
-                                           gtk.RESPONSE_CANCEL])
         self.__make_ui(settings)
+        self.__cancel_button = self.add_button(gtk.STOCK_CANCEL,
+                                               gtk.RESPONSE_CANCEL)
+        self.__okay_button = self.add_button(gtk.STOCK_OK,
+                                             gtk.RESPONSE_OK)
+        self.__okay_button.grab_default()
+        self.__okay_button.grab_focus()
 
     def run(self):
         r = gtk.Dialog.run(self)
         if r != gtk.RESPONSE_OK:
             return None
 
-        vendor = self.__vend.get_active_text()
-        model = self.__modl.get_active_text()
+        vendor = self.__vend.value
+        model = self.__modl.value
 
         cs = CloneSettings()
-        cs.port = self.__port.get_active_text()
+        cs.port = self.__port.value
         if model == _("Detect"):
             try:
                 cs.radio_class = detect.DETECT_FUNCTIONS[vendor](cs.port)
@@ -176,13 +177,13 @@ class CloneSettingsDialog(gtk.Dialog):
                     raise Exception(
                         _("Unable to detect radio on {port}").format(
                             port=cs.port))
-            except Exception, e:
+            except Exception as e:
                 d = inputdialog.ExceptionDialog(e)
                 d.run()
                 d.destroy()
                 return None
         else:
-            for rclass in directory.DRV_TO_RADIO.values():
+            for rclass in list(directory.DRV_TO_RADIO.values()):
                 if rclass.MODEL == model:
                     cs.radio_class = rclass
                     break
@@ -255,9 +256,9 @@ class CloneThread(threading.Thread):
                 self.__radio.sync_in()
 
             emsg = None
-        except Exception, e:
+        except Exception as e:
             common.log_exception()
-            LOG.error("Clone failed: {error}".format(error=e))
+            LOG.error(_("Clone failed: {error}").format(error=e))
             emsg = e
 
         gobject.idle_add(self.__progw.hide)
@@ -274,4 +275,4 @@ class CloneThread(threading.Thread):
 if __name__ == "__main__":
     d = CloneSettingsDialog("/dev/ttyUSB0")
     r = d.run()
-    print r
+    print(r)

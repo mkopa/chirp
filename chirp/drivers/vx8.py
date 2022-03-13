@@ -500,10 +500,7 @@ class VX8BankModel(chirp_common.BankModel):
 
 
 def _wipe_memory(mem):
-    mem.set_raw("\x00" * (mem.size() / 8))
-    mem.pr_frequency = 0x1d  # default PR frequency of 1600 Hz
-    mem.unknown8b = 1        # This bit must be 1, but its meaning is unknown
-    mem.rx_mode_auto = 1     # rx auto mode bit defaults to 1
+    mem.set_raw("\x00" * (mem.size() // 8))
 
 
 @directory.register
@@ -1439,7 +1436,7 @@ class VX8Radio(yaesu_clone.YaesuCloneModeRadio):
                 except AttributeError as e:
                     LOG.error("Setting %s is not in the memory map: %s" %
                               (element.get_name(), e))
-            except Exception, e:
+            except Exception as e:
                 LOG.debug(element.get_name())
                 raise
 
@@ -1485,8 +1482,6 @@ class VX8DRadio(VX8Radio):
                    146,     # Length of beacon data stored.
                    50)      # Number of beacons stored.
 
-    _TX_DELAY = ("100ms", "150ms", "200ms", "250ms", "300ms",
-                 "400ms", "500ms", "750ms", "1000ms")
     _BEACON_TYPE = ("Off", "Interval", "SmartBeaconing")
     _SMARTBEACON_PROFILE = ("Off", "Type 1", "Type 2", "Type 3")
     _POSITIONS = ("GPS", "Manual Latitude/Longitude",

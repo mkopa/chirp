@@ -16,6 +16,7 @@
 
 import threading
 
+import base64
 import gtk
 import pango
 from gobject import TYPE_INT, \
@@ -29,7 +30,10 @@ import pickle
 import os
 import logging
 
+import six
+
 from chirp.ui import common, shiftdialog, miscwidgets, config, memdetail
+from chirp.ui import compat
 from chirp.ui import bandplans
 from chirp import chirp_common, errors, directory, import_logic
 
@@ -45,10 +49,18 @@ def handle_toggle(_, path, store, col):
     store[path][col] = not store[path][col]
 
 
+def handle_ed(_, iter, new, store, col):
+    old, = store.get(iter, col)
+    if old != new:
+        store.set(iter, col, new)
+        return True
+    else:
+        return False
+
+
 class ValueErrorDialog(gtk.MessageDialog):
     def __init__(self, exception, **args):
         gtk.MessageDialog.__init__(self, buttons=gtk.BUTTONS_OK, **args)
-        self.set_default_response(gtk.RESPONSE_OK)
         self.set_property("text", _("Invalid value for this field"))
         self.format_secondary_text(str(exception))
 
@@ -170,7 +182,7 @@ class MemoryEditor(common.Editor):
 
         try:
             new = chirp_common.parse_freq(new)
-        except ValueError, e:
+        except ValueError as e:
             LOG.error("chirp_common.parse_freq error: %s", e)
             new = None
 
@@ -328,13 +340,9 @@ class MemoryEditor(common.Editor):
             return
 
         iter = self.store.get_iter(path)
-        vals = self.store.get(iter, *range(0, len(self.cols)))
-        prev, = self.store.get(iter, self.col(cap))
-        filled, = self.store.get(iter, self.col("_filled"))
-        freq, = self.store.get(iter, self.col(_("Frequency")))
-
-        # Take default values, if not yet edited
-        if not filled and freq == 0:
+        if not self.store.get(iter, self.col("_filled"))[0] and \
+                self.store.get(iter, self.col(_("Frequency")))[0] == 0:
+            LOG.error(_("Editing new item, taking defaults"))
             self.insert_new(iter)
 
         colnum = self.col(cap)
@@ -352,16 +360,13 @@ class MemoryEditor(common.Editor):
             _("Cross Mode"): self.ed_tone_field,
             }
 
-        # Call the specific editor for the given column
         if cap in funcs:
             new = funcs[cap](rend, path, new, colnum)
 
-        # Sanity check
         if new is None:
-            LOG.error("Bad value for {col}: {val}".format(col=cap, val=new))
+            LOG.error(_("Bad value for {col}: {val}").format(col=cap, val=new))
             return
 
-        # Convert type based on column
         if self.store.get_column_type(colnum) == TYPE_INT:
             new = int(new)
         elif self.store.get_column_type(colnum) == TYPE_FLOAT:
@@ -372,30 +377,24 @@ class MemoryEditor(common.Editor):
             if new == "(None)":
                 new = ""
 
-        # Verify a change was made
-        if new == prev:
-            # Restore all columns to their orginal values, a given editor
-            # may modify mutliple columns so we need to restore each of them
-            # to their previous values in order to restore the orginal state.
-            self._restore(iter, vals)
+        if not handle_ed(rend, iter, new, self.store, self.col(cap)) and \
+                cap != _("Frequency"):
+            # No change was made
+            # For frequency, we make an exception, since the handler might
+            # have altered the duplex.  That needs to be fixed.
             return
 
-        # Finally, set the new value
-        self.store.set(iter, self.col(cap), new)
-
-        # Have the radio validate the memory
         mem = self._get_memory(iter)
+
         msgs = self.rthread.radio.validate_memory(mem)
         if msgs:
             common.show_error(_("Error setting memory") + ": " +
                               "\r\n\r\n".join(msgs))
-            # Restore to orginal values and exit
-            self._restore(iter, vals)
+            self.prefill()
             return
 
         mem.empty = False
 
-        # Kick off job to write memory
         job = common.RadioJob(self._set_memory_cb, "set_memory", mem)
         job.set_desc(_("Writing memory {number}").format(number=mem.number))
         self.rthread.submit(job)
@@ -428,12 +427,14 @@ class MemoryEditor(common.Editor):
             if extd:
                 val = extd
 
-        return val
+        return str(val)
 
     def render(self, _, rend, model, iter, colnum):
-        val, hide = model.get(iter, colnum, self.col("_hide_cols"))
+        val, hide, filled = model.get(iter, colnum, self.col("_hide_cols"),
+                                      self.col('_filled'))
         val = self._render(colnum, val, iter, hide or [])
         rend.set_property("text", "%s" % val)
+        rend.set_sensitive(filled)
 
     def insert_new(self, iter, loc=None):
         line = []
@@ -916,18 +917,41 @@ class MemoryEditor(common.Editor):
 
         return uim.get_widget("/Menu")
 
+    def double_click_empty_memory(self, treeiter, path, col):
+        loc = self.store.get(treeiter, self.col(_('Loc')))
+        # Make this filled=True, thus sensitive=True
+        self.store.set(treeiter, self.col(_('_filled')), True)
+        # Set the cursor and stat editing
+        self.view.set_cursor(path, col, True)
+
     def click_cb(self, view, event):
         self.emit("usermsg", "")
-        if event.button == 3:
-            pathinfo = view.get_path_at_pos(int(event.x), int(event.y))
-            if pathinfo is not None:
-                path, col, x, y = pathinfo
-                view.grab_focus()
-                sel = view.get_selection()
-                if (not sel.path_is_selected(path)):
-                    view.set_cursor(path, col)
-                menu = self.make_context_menu()
+
+        pathinfo = view.get_path_at_pos(int(event.x), int(event.y))
+        if pathinfo is None:
+            return
+        path, col, x, y = pathinfo
+        treeiter = self.store.get_iter(path)
+
+        if hasattr(gtk.gdk.EventType, '_2BUTTON_PRESS'):
+            double_click = event.type == gtk.gdk.EventType._2BUTTON_PRESS
+        else:
+            double_click = False
+
+        if event.button == 1 and double_click:
+            filled, = self.store.get(treeiter, self.col(_('_filled')))
+            if not filled:
+                self.double_click_empty_memory(treeiter, path, col)
+            return True
+        elif event.button == 3:
+            view.set_cursor(path, col)
+            menu = self.make_context_menu()
+            try:
                 menu.popup(None, None, None, event.button, event.time)
+            except TypeError:
+                # GTK3
+                menu.popup(None, None, None, None, event.button,
+                           event.time)
             return True
 
     def get_column_visible(self, col):
@@ -976,7 +1000,7 @@ class MemoryEditor(common.Editor):
                 for i in col_order:
                     if i not in default_col_order:
                         raise Exception()
-        except Exception, e:
+        except Exception as e:
             LOG.error("column order setting: %s", e)
             col_order = default_col_order
 
@@ -985,12 +1009,14 @@ class MemoryEditor(common.Editor):
         unsupported_cols = self.get_unsupported_columns()
         visible_cols = self.get_columns_visible()
 
+        self._renderers = {}
         cols = {}
         i = 0
         for _cap, _type, _rend in self.cols:
             if not _rend:
                 continue
             rend = _rend()
+            self._renderers[_cap] = rend
             rend.connect('editing-started', self.cell_editing_started)
             rend.connect('editing-canceled', self.cell_editing_stopped)
             rend.connect('edited', self.cell_editing_stopped)
@@ -1006,18 +1032,18 @@ class MemoryEditor(common.Editor):
                 else:
                     choices = gtk.ListStore(TYPE_STRING, TYPE_STRING)
                     for choice in self.choices[_cap]:
-                        choices.append([choice, self._render(i, choice)])
+                        choices.append([str(choice), self._render(i, choice)])
                 rend.set_property("model", choices)
                 rend.set_property("text-column", 1)
                 rend.set_property("editable", True)
                 rend.set_property("has-entry", False)
                 rend.connect("edited", self.edited, _cap)
-                col = gtk.TreeViewColumn(_cap, rend, text=i, sensitive=filled)
+                col = gtk.TreeViewColumn(_cap, rend, text=i)
                 col.set_cell_data_func(rend, self.render, i)
             else:
                 rend.set_property("editable", _cap not in non_editable)
                 rend.connect("edited", self.edited, _cap)
-                col = gtk.TreeViewColumn(_cap, rend, text=i, sensitive=filled)
+                col = gtk.TreeViewColumn(_cap, rend, text=i)
                 col.set_cell_data_func(rend, self.render, i)
 
             col.set_reorderable(True)
@@ -1053,19 +1079,14 @@ class MemoryEditor(common.Editor):
                 _("Internal Error: Column {name} not found").format(
                     name=caption))
 
-    def _prefill(self, num):
-        def handler(mem, number):
-            if not isinstance(mem, Exception):
-                if not mem.empty or self.show_empty:
-                    gobject.idle_add(self.set_memory, mem)
-            else:
-                mem = chirp_common.Memory(number, True, "Error")
-                gobject.idle_add(self.set_memory, mem)
-
-        job = common.RadioJob(handler, "get_memory", num)
-        job.set_desc(_("Getting memory {number}").format(number=num))
-        job.set_cb_args(num)
-        self.rthread.submit(job, 2)
+    def rend(self, caption):
+        try:
+            return self._renderers[caption]
+        except KeyError:
+            print(self._renderers)
+            raise Exception(
+                _('Internal Error: Renderer for column %s not found') % (
+                    caption))
 
     def prefill(self):
         self.store.clear()
@@ -1074,16 +1095,29 @@ class MemoryEditor(common.Editor):
         lo = int(self.lo_limit_adj.get_value())
         hi = int(self.hi_limit_adj.get_value())
 
+        def handler(mem, number):
+            if not isinstance(mem, Exception):
+                if not mem.empty or self.show_empty:
+                    gobject.idle_add(self.set_memory, mem)
+            else:
+                mem = chirp_common.Memory()
+                mem.number = number
+                mem.name = "ERROR"
+                mem.empty = True
+                gobject.idle_add(self.set_memory, mem)
+
         for i in range(lo, hi+1):
-            self._prefill(i)
+            job = common.RadioJob(handler, "get_memory", i)
+            job.set_desc(_("Getting memory {number}").format(number=i))
+            job.set_cb_args(i)
+            self.rthread.submit(job, 2)
 
         if self.show_special:
             for i in self._features.valid_special_chans:
-                self._prefill(i)
-
-    def _restore(self, iter, vals):
-        for col, val in enumerate(vals):
-            self.store.set(iter, col, val)
+                job = common.RadioJob(handler, "get_memory", i)
+                job.set_desc(_("Getting channel {chan}").format(chan=i))
+                job.set_cb_args(i)
+                self.rthread.submit(job, 2)
 
     def _set_memory(self, iter, memory):
         self.store.set(iter,
@@ -1102,7 +1136,9 @@ class MemoryEditor(common.Editor):
                        self.col(_("Duplex")), memory.duplex,
                        self.col(_("Offset")), memory.offset,
                        self.col(_("Mode")), memory.mode,
-                       self.col(_("Power")), memory.power or "",
+                       self.col(_("Power")), (memory.power and
+                                              str(memory.power) or
+                                              ""),
                        self.col(_("Tune Step")), memory.tuning_step,
                        self.col(_("Skip")), memory.skip,
                        self.col(_("Comment")), memory.comment)
@@ -1197,7 +1233,8 @@ class MemoryEditor(common.Editor):
             self._config.get_int(hikey) or 999
 
         self.lo_limit_adj = gtk.Adjustment(lostart, min, max-1, 1, 10)
-        lo = gtk.SpinButton(self.lo_limit_adj)
+        lo = compat.SpinButton(self.lo_limit_adj)
+        lo.set_value(lostart)
         lo.connect("value-changed", self._store_limit, "lo")
         lo.show()
         hbox.pack_start(lo, 0, 0, 0)
@@ -1207,7 +1244,8 @@ class MemoryEditor(common.Editor):
         hbox.pack_start(lab, 0, 0, 0)
 
         self.hi_limit_adj = gtk.Adjustment(histart, min+1, max, 1, 10)
-        hi = gtk.SpinButton(self.hi_limit_adj)
+        hi = compat.SpinButton(self.hi_limit_adj)
+        hi.set_value(histart)
         hi.connect("value-changed", self._store_limit, "hi")
         hi.show()
         hbox.pack_start(hi, 0, 0, 0)
@@ -1394,7 +1432,7 @@ class MemoryEditor(common.Editor):
 
         # Run low priority jobs to get the rest of the memories
         hi = int(self.hi_limit_adj.get_value())
-        for i in range(hi+1, max+1):
+        for i in range(hi, max+1):
             job = common.RadioJob(None, "get_memory", i)
             job.set_desc(_("Getting memory {number}").format(number=i))
             self.rthread.submit(job, 10)
@@ -1435,9 +1473,16 @@ class MemoryEditor(common.Editor):
 
                 self._set_memory(iter, mem)
 
-        result = pickle.dumps((self._features, selection))
-        clipboard = gtk.Clipboard(selection="CLIPBOARD")
-        clipboard.set_text(result)
+        result = base64.b64encode(pickle.dumps((self._features,
+                                                selection))).decode()
+        if hasattr(gtk.Clipboard, 'get'):
+            # GTK3
+            clipboard = gtk.Clipboard.get(gtk.gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(result, len(result))
+        else:
+            # GTK2
+            clipboard = gtk.Clipboard(selection="CLIPBOARD")
+            clipboard.set_text(result)
         clipboard.store()
 
         return cut  # Only changed if we did a cut
@@ -1456,7 +1501,7 @@ class MemoryEditor(common.Editor):
         always = False
 
         try:
-            src_features, mem_list = pickle.loads(text)
+            src_features, mem_list = pickle.loads(base64.b64decode(text))
         except Exception:
             LOG.error("Paste failed to unpickle")
             return
@@ -1476,27 +1521,20 @@ class MemoryEditor(common.Editor):
             loc, filled = store.get(iter,
                                     self.col(_("Loc")), self.col("_filled"))
             if filled and not always:
-                buttons = (gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
-                           gtk.STOCK_NO, gtk.RESPONSE_NO,
-                           _("Yes to All"), gtk.RESPONSE_ACCEPT,
-                           gtk.STOCK_YES, gtk.RESPONSE_YES)
                 d = miscwidgets.YesNoDialog(title=_("Overwrite?"),
-                                            parent=None,
-                                            buttons=buttons)
-                d.set_default_response(gtk.RESPONSE_YES)
-                d.set_alternative_button_order([gtk.RESPONSE_YES,
-                                                gtk.RESPONSE_ACCEPT,
-                                                gtk.RESPONSE_NO,
-                                                gtk.RESPONSE_CANCEL])
+                                            buttons=(gtk.STOCK_YES, 1,
+                                                     gtk.STOCK_NO, 2,
+                                                     gtk.STOCK_CANCEL, 3,
+                                                     "All", 4))
                 d.set_text(
                     _("Overwrite location {number}?").format(number=loc))
                 r = d.run()
                 d.destroy()
-                if r == gtk.RESPONSE_ACCEPT:
+                if r == 4:
                     always = True
-                elif r == gtk.RESPONSE_CANCEL:
+                elif r == 3:
                     break
-                elif r == gtk.RESPONSE_NO:
+                elif r == 2:
                     iter = store.iter_next(iter)
                     continue
 
@@ -1514,20 +1552,16 @@ class MemoryEditor(common.Editor):
                 errs = [x for x in msgs
                         if isinstance(x, chirp_common.ValidationError)]
                 if errs:
-                    buttons = (gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
-                               gtk.STOCK_OK, gtk.RESPONSE_OK)
                     d = miscwidgets.YesNoDialog(title=_("Incompatible Memory"),
-                                                buttons=buttons)
-                    d.set_default_response(gtk.RESPONSE_OK)
-                    d.set_alternative_button_order([gtk.RESPONSE_OK,
-                                                    gtk.RESPONSE_CANCEL])
+                                                buttons=(gtk.STOCK_OK, 1,
+                                                         gtk.STOCK_CANCEL, 2))
                     d.set_text(
                         _("Pasted memory {number} is not compatible with "
                           "this radio because:").format(number=src_number) +
                         os.linesep + os.linesep.join(msgs))
                     r = d.run()
                     d.destroy()
-                    if r == gtk.RESPONSE_CANCEL:
+                    if r == 2:
                         break
                     else:
                         iter = store.iter_next(iter)
@@ -1542,8 +1576,15 @@ class MemoryEditor(common.Editor):
             self.rthread.submit(job)
 
     def paste_selection(self):
-        clipboard = gtk.Clipboard(selection="CLIPBOARD")
-        clipboard.request_text(self._paste_selection)
+        if hasattr(gtk.Clipboard, 'get'):
+            # GTK3
+            clipboard = gtk.Clipboard.get(gtk.gdk.SELECTION_CLIPBOARD)
+            text = clipboard.wait_for_text()
+            self._paste_selection(clipboard, text, None)
+        else:
+            # GTK2
+            clipboard = gtk.Clipboard(selection="CLIPBOARD")
+            clipboard.request_text(self._paste_selection)
 
     def select_all(self):
         self.view.get_selection().select_all()
@@ -1658,13 +1699,11 @@ class DstarMemoryEditor(MemoryEditor):
             for i in _dv_columns:
                 if i not in self.choices:
                     continue
-                column = self.view.get_column(self.col(i))
-                rend = column.get_cell_renderers()[0]
+                rend = self.rend(i)
                 rend.set_property("has-entry", True)
 
         for i in _dv_columns:
-            col = self.view.get_column(self.col(i))
-            rend = col.get_cell_renderers()[0]
+            rend = self.rend(i)
             rend.set_property("family", "Monospace")
 
     def set_urcall_list(self, urcalls):
@@ -1699,3 +1738,7 @@ class DstarMemoryEditor(MemoryEditor):
                            self.col("RPT2CALL"), "",
                            self.col("Digital Code"), 0,
                            )
+
+
+class ID800MemoryEditor(DstarMemoryEditor):
+    pass

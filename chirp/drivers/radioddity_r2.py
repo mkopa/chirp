@@ -90,7 +90,6 @@ struct {
 """
 
 CMD_ACK = "\x06"
-CMD_ALT_ACK = "\x53"
 CMD_STX = "\x02"
 CMD_ENQ = "\x05"
 
@@ -147,8 +146,8 @@ def _r2_enter_programming_mode(radio):
         raise errors.RadioError("Error communicating with radio")
 
     # No idea yet what the next 7 bytes stand for
-    # as long as they start with ACK (or ALT_ACK on some devices) we are fine
-    if not ident.startswith(CMD_ACK) and not ident.startswith(CMD_ALT_ACK):
+    # as long as they start with ACK we are fine
+    if not ident.startswith(CMD_ACK):
         _r2_exit_programming_mode(radio)
         LOG.debug(util.hexprint(ident))
         raise errors.RadioError("Radio returned unknown identification string")
@@ -298,7 +297,8 @@ def do_upload(radio):
     _r2_exit_programming_mode(radio)
 
 
-class RadioddityR2(chirp_common.CloneModeRadio):
+@directory.register
+class RadioddityR2Radio(chirp_common.CloneModeRadio):
     """Radioddity R2"""
     VENDOR = "Radioddity"
     MODEL = "R2"
@@ -620,13 +620,3 @@ class RadioddityR2(chirp_common.CloneModeRadio):
         # This radio has always been post-metadata, so never do
         # old-school detection
         return False
-
-
-class RT24Alias(chirp_common.Alias):
-    VENDOR = "Retevis"
-    MODEL = "RT24"
-
-
-@directory.register
-class RadioddityR2Generic(RadioddityR2):
-    ALIASES = [RT24Alias]

@@ -75,8 +75,6 @@ struct {
   u8 k1longp;       // Key 1 Long Press
   u8 k2longp;       // Key 2 Long Press
   u8 lpt;           // Long Press Time
-  u8 unknown7:6,
-     txtone:2;      // TX Tone
 } settings;
 
 #seekto 0x0170;
@@ -104,7 +102,6 @@ LIST_SSAVE = ["Off"] + ["%s" % x for x in range(1, 7)]
 LIST_PRIORITYCH = ["Off"] + ["%s" % x for x in range(1, 17)]
 LIST_SCANSPEED = ["%s" % x for x in range(100, 550, 50)]
 LIST_SCANDELAY = ["%s" % x for x in range(3, 31)]
-LIST_TXTONE = ["Off", "BOT", "EOT", "Both"]
 
 SETTING_LISTS = {
     "lpt": LIST_LPT,
@@ -120,7 +117,6 @@ SETTING_LISTS = {
     "prioritych": LIST_PRIORITYCH,
     "scanspeed": LIST_SCANSPEED,
     "scandelay": LIST_SCANDELAY,
-    "txtone": LIST_TXTONE,
     }
 
 # Retevis RT1 fingerprints
@@ -308,7 +304,7 @@ def do_upload(radio):
 
     bands = ["VHF", "UHF"]
     image_band = radio_band = "unknown"
-    for i in range(0, 2):
+    for i in range(0,2):
         if image_model == MODELS[i]:
             image_band = bands[i]
         if radio_model == MODELS[i]:
@@ -372,7 +368,6 @@ class RT1Radio(chirp_common.CloneModeRadio):
         rf.valid_power_levels = RT1_POWER_LEVELS
         rf.valid_duplexes = ["", "-", "+", "split", "off"]
         rf.valid_modes = ["NFM", "FM"]  # 12.5 KHz, 25 kHz.
-        rf.valid_dtcs_codes = RT1_DTCS
         rf.memory_bounds = (1, 16)
         rf.valid_tuning_steps = [2.5, 5., 6.25, 10., 12.5, 25.]
         if self._mmap is None:
@@ -677,8 +672,8 @@ class RT1Radio(chirp_common.CloneModeRadio):
             val = _settings.scanspeed
         rs = RadioSetting("scanspeed", "Scan Speed[ms]",
                           RadioSettingValueList(
-                              LIST_SCANSPEED,
-                              LIST_SCANSPEED[val]))
+                          LIST_SCANSPEED,
+                          LIST_SCANSPEED[val]))
         basic.append(rs)
 
         if _settings.scandelay > 27:
@@ -689,12 +684,6 @@ class RT1Radio(chirp_common.CloneModeRadio):
                           RadioSettingValueList(
                               LIST_SCANDELAY,
                               LIST_SCANDELAY[val]))
-        basic.append(rs)
-
-        rs = RadioSetting("txtone", "Tx Tone",
-                          RadioSettingValueList(
-                              LIST_TXTONE,
-                              LIST_TXTONE[_settings.txtone]))
         basic.append(rs)
 
         return top
@@ -749,7 +738,7 @@ class RT1Radio(chirp_common.CloneModeRadio):
         # testing the file data size
         if len(filedata) in [0x0400, ]:
             match_size = True
-
+        
         # testing the model fingerprint
         match_model = model_match(cls, filedata)
 

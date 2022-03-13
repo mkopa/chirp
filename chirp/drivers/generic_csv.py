@@ -47,7 +47,7 @@ def write_memory(writer, mem):
 
 
 @directory.register
-class CSVRadio(chirp_common.FileBackedRadio):
+class CSVRadio(chirp_common.FileBackedRadio, chirp_common.IcomDstarSupport):
     """A driver for Generic CSV files"""
     VENDOR = "Generic"
     MODEL = "CSV"
@@ -67,15 +67,20 @@ class CSVRadio(chirp_common.FileBackedRadio):
         "Mode":          (str,   "mode"),
         "TStep":         (float, "tuning_step"),
         "Skip":          (str,   "skip"),
+        "URCALL":        (str,   "dv_urcall"),
+        "RPT1CALL":      (str,   "dv_rpt1call"),
+        "RPT2CALL":      (str,   "dv_rpt2call"),
         "Comment":       (str,   "comment"),
         }
 
-    def _blank(self, setDefault=False):
+    def _blank(self):
         self.errors = []
-        self.memories = [chirp_common.Memory(i, True) for i in range(0, 1000)]
-        if (setDefault):
-            self.memories[0].empty = False
-            self.memories[0].freq = 146010000
+        self.memories = []
+        for i in range(0, 1000):
+            mem = chirp_common.Memory()
+            mem.number = i
+            mem.empty = True
+            self.memories.append(mem)
 
     def __init__(self, pipe):
         chirp_common.FileBackedRadio.__init__(self, None)
@@ -87,17 +92,18 @@ class CSVRadio(chirp_common.FileBackedRadio):
         if self._filename and os.path.exists(self._filename):
             self.load()
         else:
-            self._blank(True)
+            self._blank()
 
     def get_features(self):
         rf = chirp_common.RadioFeatures()
         rf.has_bank = False
         rf.requires_call_lists = False
         rf.has_implicit_calls = False
-        rf.memory_bounds = (0, len(self.memories)-1)
+        rf.memory_bounds = (0, len(self.memories))
         rf.has_infinite_number = True
         rf.has_nostep_tuning = True
         rf.has_comment = True
+        rf.can_odd_split = True
 
         rf.valid_modes = list(chirp_common.MODES)
         rf.valid_tmodes = list(chirp_common.TONE_MODES)
@@ -155,9 +161,9 @@ class CSVRadio(chirp_common.FileBackedRadio):
                     val = typ(val)
                 if hasattr(mem, attr):
                     setattr(mem, attr, val)
-            except OmittedHeaderError, e:
+            except OmittedHeaderError as e:
                 pass
-            except Exception, e:
+            except Exception as e:
                 raise Exception("[%s] %s" % (attr, e))
 
         return self._clean(headers, line, mem)
@@ -171,10 +177,12 @@ class CSVRadio(chirp_common.FileBackedRadio):
 
         self._blank()
 
-        f = file(self._filename, "rU")
-        header = f.readline().strip()
+        with open(self._filename, "rU") as f:
+            header = f.readline().strip()
+            f.seek(0, 0)
+            return self._load(f)
 
-        f.seek(0, 0)
+    def _load(self, f):
         reader = csv.reader(f, delimiter=chirp_common.SEPCHAR, quotechar='"')
 
         good = 0
@@ -198,7 +206,7 @@ class CSVRadio(chirp_common.FileBackedRadio):
                 mem = self._parse_csv_data_line(header, line)
                 if mem.number is None:
                     raise Exception("Invalid Location field" % lineno)
-            except Exception, e:
+            except Exception as e:
                 LOG.error("Line %i: %s", lineno, e)
                 self.errors.append("Line %i: %s" % (lineno, e))
                 continue
@@ -218,14 +226,12 @@ class CSVRadio(chirp_common.FileBackedRadio):
         if filename:
             self._filename = filename
 
-        f = file(self._filename, "wb")
-        writer = csv.writer(f, delimiter=chirp_common.SEPCHAR)
-        writer.writerow(chirp_common.Memory.CSV_FORMAT)
+        with open(self._filename, "w") as f:
+            writer = csv.writer(f, delimiter=chirp_common.SEPCHAR)
+            writer.writerow(chirp_common.Memory.CSV_FORMAT)
 
-        for mem in self.memories:
-            write_memory(writer, mem)
-
-        f.close()
+            for mem in self.memories:
+                write_memory(writer, mem)
 
     # MMAP compatibility
     def save_mmap(self, filename):
@@ -274,6 +280,11 @@ class CSVRadio(chirp_common.FileBackedRadio):
     @classmethod
     def match_model(cls, filedata, filename):
         """Match files ending in .CSV"""
+        try:
+            filedata = filedata.decode()
+        except UnicodeDecodeError:
+            # CSV files are text
+            return False
         return filename.lower().endswith("." + cls.FILE_EXTENSION) and \
             (filedata.startswith("Location,") or filedata == "")
 
@@ -448,6 +459,11 @@ class RTCSVRadio(CSVRadio):
         # RT Systems provides a different set of columns for each radio.
         # We attempt to match only the first few columns, hoping they are
         # consistent across radio models.
+        try:
+            filedata = filedata.decode()
+        except UnicodeDecodeError:
+            # CSV files are text
+            return False
         return filename.lower().endswith("." + cls.FILE_EXTENSION) and \
             filedata.startswith("Channel Number,Receive Frequency,"
                                 "Transmit Frequency,Offset Frequency,"
