@@ -2,13 +2,9 @@ import unittest
 import mox
 
 from tests.unit import base
-try:
-    from chirp.ui import shiftdialog
-except ImportError:
-    shiftdialog = None
+from chirpui import shiftdialog
 from chirp import chirp_common
 from chirp import errors
-
 
 class FakeRadio(object):
     def __init__(self, *memories):
@@ -48,8 +44,7 @@ class FakeRadioThread(object):
     def unlock(self):
         pass
 
-
-class ShiftDialogTest(base.BaseGTKTest):
+class ShiftDialogTest(base.BaseTest):
     def _test_hole(self, fn, starting, arg, expected):
         radio = FakeRadio(*tuple(starting))
         radio.get_features().memory_bounds = (0, 5)

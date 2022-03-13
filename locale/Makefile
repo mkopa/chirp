@@ -1,4 +1,4 @@
-LOCALES = en_US pl it nl de hu ru pt_BR fr uk_UA es_ES
+LOCALES = en_US pl it nl de hu ru pt_BR
 MOFILES = $(patsubst %,%/LC_MESSAGES/CHIRP.mo,$(LOCALES))
 
 COPY="Dan Smith <dsmith@danplanet.com>"
@@ -13,7 +13,7 @@ clean:
 	find * -depth -type d -exec rmdir "{}" \;
 
 chirpui.pot:
-	/usr/bin/find ../chirp/ui -name '*.py' > .files
+	/usr/bin/find ../chirpui -name '*.py' > .files
 	xgettext -L Python -k_ -o chirpui.pot -f .files $(XGT_OPTS)
 
 %.po: chirpui.pot

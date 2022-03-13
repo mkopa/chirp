@@ -20,7 +20,7 @@ SHORTNAME = "north_america"
 
 DESC = {
   "name": "North American Band Plan",
-  "url":  "http://www.arrl.org/band-plan"
+  "url": "http://www.arrl.org/band-plan"
 }
 
 BANDS_160M = (
@@ -36,25 +36,25 @@ BANDS_80M = (
   bandplan.Band((3570000, 3600000), "RTTY/Data", mode="RTTY"),
   bandplan.Band((3790000, 3800000), "DX window"),
 )
-
+ 
 BANDS_40M = (
   bandplan.Band((7000000, 7300000), "40 Meter Band"),
   bandplan.Band((7080000, 7125000), "RTTY/Data", mode="RTTY"),
 )
-
+ 
 BANDS_30M = (
   bandplan.Band((10100000, 10150000), "30 Meter Band"),
   bandplan.Band((10130000, 10140000), "RTTY", mode="RTTY"),
   bandplan.Band((10140000, 10150000), "Packet"),
 )
-
+ 
 BANDS_20M = (
   bandplan.Band((14000000, 14350000), "20 Meter Band"),
   bandplan.Band((14070000, 14095000), "RTTY", mode="RTTY"),
   bandplan.Band((14095000, 14099500), "Packet"),
   bandplan.Band((14100500, 14112000), "Packet"),
 )
-
+ 
 BANDS_17M = (
   bandplan.Band((18068000, 18168000), "17 Meter Band"),
   bandplan.Band((18100000, 18105000), "RTTY", mode="RTTY"),
@@ -71,7 +71,7 @@ BANDS_12M = (
   bandplan.Band((24920000, 24925000), "RTTY", mode="RTTY"),
   bandplan.Band((24925000, 24930000), "Packet"),
 )
-
+ 
 BANDS_10M = (
   bandplan.Band((28000000, 29700000), "10 Meter Band"),
   bandplan.Band((28000000, 28070000), "CW", mode="CW"),
@@ -82,9 +82,9 @@ BANDS_10M = (
   bandplan.Band((29000000, 29200000), "AM", mode="AM"),
   bandplan.Band((29300000, 29510000), "Satellite Downlinks"),
   bandplan.Band((29520000, 29590000), "Repeater Inputs",
-                step_khz=10, mode="FM"),
-  bandplan.Band((29610000, 29700000), "Repeater Outputs",
-                step_khz=10, mode="FM", input_offset=-890000),
+                step_khz=10, mode="NFM"),
+  bandplan.Band((29610000, 29700000), "Repeater Outputs", 
+                step_khz=10, mode="NFM", input_offset=-890000),
 )
 
 BANDS_6M = (
@@ -103,10 +103,10 @@ BANDS_6M = (
                 input_offset=-500000),
   bandplan.Band((51620000, 51680000), "Digital repeater outputs",
                 input_offset=-500000),
-  bandplan.Band((52020000, 52040000), "FM simplex", mode="FM"),
+  bandplan.Band((52020000, 52040000), "FM simplex", mode="NFM"),
   bandplan.Band((52500000, 52980000), "Repeater outputs B",
-                input_offset=-500000, step_khz=20, mode="FM"),
-  bandplan.Band((53000000, 53100000), "FM simplex", mode="FM"),
+                input_offset=-500000, step_khz=20, mode="NFM"),
+  bandplan.Band((53000000, 53100000), "FM simplex", mode="NFM"),
   bandplan.Band((53100000, 53400000), "Radio remote control", step_khz=100),
   bandplan.Band((53500000, 53980000), "Repeater outputs C",
                 input_offset=-500000),
@@ -125,13 +125,13 @@ BANDS_2M = (
                 mode="USB"),
   bandplan.Band((144275000, 144300000), "Propagation beacons", mode="CW"),
   bandplan.Band((144300000, 144500000), "OSCAR subband"),
-  bandplan.Band((144600000, 144900000), "FM repeater inputs", mode="FM"),
+  bandplan.Band((144600000, 144900000), "FM repeater inputs", mode="NFM"),
   bandplan.Band((144900000, 145100000), "Weak signal and FM simplex",
-                mode="FM", step_khz=10),
+                mode="NFM", step_khz=10),
   bandplan.Band((145100000, 145200000), "Linear translator outputs",
                 input_offset=-600000),
   bandplan.Band((145200000, 145500000), "FM repeater outputs",
-                input_offset=-600000, mode="FM",),
+                input_offset=-600000, mode="NFM",),
   bandplan.Band((145500000, 145800000), "Misc and experimental modes"),
   bandplan.Band((145800000, 146000000), "OSCAR subband"),
   bandplan.Band((146400000, 146580000), "Simplex"),
@@ -149,12 +149,12 @@ BANDS_1_25M = (
   bandplan.Band((222050000, 222060000), "Propagation beacons"),
   bandplan.Band((222100000, 222150000), "Weak-signal CW & SSB"),
   bandplan.Band((222150000, 222250000), "Local coordinator's option"),
-  bandplan.Band((223400000, 223520000), "FM simplex", mode="FM"),
+  bandplan.Band((223400000, 223520000), "FM simplex", mode="NFM"),
   bandplan.Band((223520000, 223640000), "Digital, packet"),
   bandplan.Band((223640000, 223700000), "Links, control"),
   bandplan.Band((223710000, 223850000), "Local coordinator's option"),
   bandplan.Band((223850000, 224980000), "Repeater outputs only",
-                mode="FM", input_offset=-1600000),
+                mode="NFM", input_offset=-1600000),
 )
 
 BANDS_70CM = (
@@ -177,7 +177,7 @@ BANDS_70CM = (
   bandplan.Band((447000000, 450000000), "Repeater inputs and outputs "
                 "(local option)", input_offset=-5000000),
 )
-
+ 
 BANDS_33CM = (
   bandplan.Band((902000000, 928000000), "33 Centimeter Band"),
   bandplan.Band((902075000, 902100000), "CW/SSB, Weak signal"),
@@ -206,9 +206,8 @@ BANDS_23CM = (
                 "with 1258.000-1260.000", mode="FM"),
   bandplan.Band((1248000000, 1252000000), "Digital"),
   bandplan.Band((1252000000, 1258000000), "ATV Channel #2"),
-  bandplan.Band((1258000000, 1260000000),
-                "Point-to-point links paired with 1246.000-1248.000",
-                mode="FM"),
+  bandplan.Band((1258000000, 1260000000), "Point-to-point links paired "
+                 "with 1246.000-1248.000", mode="FM"),
   bandplan.Band((1240000000, 1260000000), "Regional option, FM ATV"),
   bandplan.Band((1260000000, 1270000000), "Satellite uplinks, Experimental, "
                 "Simplex ATV"),
@@ -239,8 +238,8 @@ BANDS_13CM = (
                 "paired with 2393 - 2393.750"),
   bandplan.Band((2303750000, 2304000000), "SSB, CW, digital weak-signal"),
   bandplan.Band((2304000000, 2304100000), "Weak Signal EME Band, <3kHz"),
-  bandplan.Band((2304100000, 2304300000),
-                "SSB, CW, digital weak-signal, <3kHz"),
+  bandplan.Band((2304100000, 2304300000), "SSB, CW, digital weak-signal, <3kHz"
+               ),
   bandplan.Band((2304300000, 2304400000), "Beacons, <3kHz"),
   bandplan.Band((2304400000, 2304750000), "SSB, CW, digital weak-signal and "
                 "NBFM, <6kHz"),

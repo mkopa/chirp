@@ -15,43 +15,34 @@
 
 import struct
 
-
-def hexprint(data, addrfmt=None):
+def hexprint(data):
     """Return a hexdump-like encoding of @data"""
-    if addrfmt is None:
-        addrfmt = '%(addr)03i'
+    line_sz = 8
 
-    block_size = 8
-
-    lines = len(data) / block_size
-
-    if (len(data) % block_size) != 0:
+    lines = len(data) / line_sz
+    
+    if (len(data) % line_sz) != 0:
         lines += 1
-        data += "\x00" * ((lines * block_size) - len(data))
+        data += "\x00" * ((lines * line_sz) - len(data))
 
     out = ""
+        
+    for i in range(0, (len(data)/line_sz)):
+        out += "%03i: " % (i * line_sz)
 
-    for block in range(0, (len(data)/block_size)):
-        addr = block * block_size
-        try:
-            out += addrfmt % locals()
-        except (OverflowError, ValueError, TypeError, KeyError):
-            out += "%03i" % addr
-        out += ': '
-
-        left = len(data) - (block * block_size)
-        if left < block_size:
+        left = len(data) - (i * line_sz)
+        if left < line_sz:
             limit = left
         else:
-            limit = block_size
-
+            limit = line_sz
+            
         for j in range(0, limit):
-            out += "%02x " % ord(data[(block * block_size) + j])
+            out += "%02x " % ord(data[(i * line_sz) + j])
 
         out += "  "
 
         for j in range(0, limit):
-            char = data[(block * block_size) + j]
+            char = data[(i * line_sz) + j]
 
             if ord(char) > 0x20 and ord(char) < 0x7E:
                 out += "%s" % char
@@ -61,7 +52,6 @@ def hexprint(data, addrfmt=None):
         out += "\n"
 
     return out
-
 
 def bcd_encode(val, bigendian=True, width=None):
     """This is really old and shouldn't be used anymore"""
@@ -79,14 +69,13 @@ def bcd_encode(val, bigendian=True, width=None):
         digits.append(0)
 
     for i in range(0, len(digits), 2):
-        newval = struct.pack("B", (digits[i + 1] << 4) | digits[i])
+        newval = struct.pack("B", (digits[i+1] << 4) | digits[i])
         if bigendian:
-            result = newval + result
+            result =  newval + result
         else:
             result = result + newval
-
+    
     return result
-
 
 def get_dict_rev(thedict, value):
     """Return the first matching key for a given @value in @dict"""
@@ -94,16 +83,3 @@ def get_dict_rev(thedict, value):
     for k, v in thedict.items():
         _dict[v] = k
     return _dict[value]
-
-
-def safe_charset_string(indexes, charset, safechar=" "):
-    """Return a string from an array of charset indexes,
-    replaces out of charset values with safechar"""
-    assert safechar in charset
-    _string = ""
-    for i in indexes:
-        try:
-            _string += charset[i]
-        except IndexError:
-            _string += safechar
-    return _string

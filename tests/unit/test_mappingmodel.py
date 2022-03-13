@@ -15,8 +15,7 @@
 
 from tests.unit import base
 from chirp import chirp_common
-from chirp.drivers import icf
-
+from chirp import icf
 
 class TestBaseMapping(base.BaseTest):
     CLS = chirp_common.MemoryMapping
@@ -38,10 +37,8 @@ class TestBaseMapping(base.BaseTest):
         self.assertEqual(mapping1, mapping2)
         self.assertNotEqual(mapping1, mapping3)
 
-
 class TestBaseBank(TestBaseMapping):
     CLS = chirp_common.Bank
-
 
 class _TestBaseClass(base.BaseTest):
     ARGS = tuple()
@@ -53,7 +50,6 @@ class _TestBaseClass(base.BaseTest):
     def _test_base(self, method, *args):
         self.assertRaises(NotImplementedError,
                           getattr(self.model, method), *args)
-
 
 class TestBaseMappingModel(_TestBaseClass):
     CLS = chirp_common.MappingModel
@@ -73,14 +69,12 @@ class TestBaseMappingModel(_TestBaseClass):
     def test_get_name(self):
         self.assertEqual(self.model.get_name(), 'Foo')
 
-
 class TestBaseBankModel(TestBaseMappingModel):
     ARGS = tuple([None])
     CLS = chirp_common.BankModel
 
     def test_get_name(self):
         self.assertEqual(self.model.get_name(), 'Banks')
-
 
 class TestBaseMappingModelIndexInterface(_TestBaseClass):
     CLS = chirp_common.MappingModelIndexInterface
@@ -94,13 +88,11 @@ class TestBaseMappingModelIndexInterface(_TestBaseClass):
         for method, args in methods:
             self._test_base(method, *args)
 
-
 class TestIcomBanks(TestBaseMapping):
     def test_icom_bank(self):
         bank = icf.IcomBank(None, 1, 'Foo')
         # IcomBank has an index attribute used by IcomBankModel
         self.assertTrue(hasattr(bank, 'index'))
-
 
 class TestIcomBankModel(base.BaseTest):
     CLS = icf.IcomBankModel
@@ -216,7 +208,6 @@ class TestIcomBankModel(base.BaseTest):
         self.mox.ReplayAll()
         self.assertEqual(self._model.get_memory_mappings(mem1)[0], banks[2])
         self.assertEqual(self._model.get_memory_mappings(mem2), [])
-
 
 class TestIcomIndexedBankModel(TestIcomBankModel):
     CLS = icf.IcomIndexedBankModel

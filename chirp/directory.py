@@ -16,13 +16,9 @@
 
 import os
 import tempfile
-import logging
 
-from chirp.drivers import icf, rfinder
-from chirp import chirp_common, util, radioreference, errors
-
-LOG = logging.getLogger(__name__)
-
+from chirp import icf
+from chirp import chirp_common, util, rfinder, radioreference, errors
 
 def radio_class_id(cls):
     """Return a unique identification string for @cls"""
@@ -35,19 +31,15 @@ def radio_class_id(cls):
     ident = ident.replace(")", "")
     return ident
 
-
 ALLOW_DUPS = False
-
-
 def enable_reregistrations():
     """Set the global flag ALLOW_DUPS=True, which will enable a driver
     to re-register for a slot in the directory without triggering an
     exception"""
     global ALLOW_DUPS
     if not ALLOW_DUPS:
-        LOG.info("driver re-registration enabled")
+        print "NOTE: driver re-registration enabled"
     ALLOW_DUPS = True
-
 
 def register(cls):
     """Register radio @cls with the directory"""
@@ -55,37 +47,33 @@ def register(cls):
     ident = radio_class_id(cls)
     if ident in DRV_TO_RADIO.keys():
         if ALLOW_DUPS:
-            LOG.warn("Replacing existing driver id `%s'" % ident)
+            print "Replacing existing driver id `%s'" % ident
         else:
             raise Exception("Duplicate radio driver id `%s'" % ident)
     DRV_TO_RADIO[ident] = cls
     RADIO_TO_DRV[cls] = ident
-    LOG.info("Registered %s = %s" % (ident, cls.__name__))
+    print "Registered %s = %s" % (ident, cls.__name__)
 
     return cls
-
 
 DRV_TO_RADIO = {}
 RADIO_TO_DRV = {}
 
-
 def get_radio(driver):
     """Get radio driver class by identification string"""
-    if driver in DRV_TO_RADIO:
+    if DRV_TO_RADIO.has_key(driver):
         return DRV_TO_RADIO[driver]
     else:
         raise Exception("Unknown radio type `%s'" % driver)
 
-
 def get_driver(rclass):
     """Get the identification string for a given class"""
-    if rclass in RADIO_TO_DRV:
+    if RADIO_TO_DRV.has_key(rclass):
         return RADIO_TO_DRV[rclass]
-    elif rclass.__bases__[0] in RADIO_TO_DRV:
+    elif RADIO_TO_DRV.has_key(rclass.__bases__[0]):
         return RADIO_TO_DRV[rclass.__bases__[0]]
     else:
         raise Exception("Unknown radio type `%s'" % rclass)
-
 
 def icf_to_image(icf_file, img_file):
     # FIXME: Why is this here?
@@ -99,45 +87,35 @@ def icf_to_image(icf_file, img_file):
                 img_data = mmap.get_packed()[:model._memsize]
                 break
         except Exception:
-            pass  # Skip non-Icoms
+            pass # Skip non-Icoms
 
     if img_data:
         f = file(img_file, "wb")
         f.write(img_data)
         f.close()
     else:
-        LOG.error("Unsupported model data: %s" % util.hexprint(mdata))
+        print "Unsupported model data:"
+        print util.hexprint(mdata)
         raise Exception("Unsupported model")
-
-
-# This is a mapping table of radio models that have changed in the past.
-# ideally we would never do this, but in the case where a radio was added
-# as the wrong model name, or a model has to be split, we need to be able
-# to open older files and do something intelligent with them.
-MODEL_COMPAT = {
-    ('Retevis', 'RT-5R'): ('Retevis', 'RT5R'),
-    ('Retevis', 'RT-5RV'): ('Retevis', 'RT5RV'),
-}
-
 
 def get_radio_by_image(image_file):
     """Attempt to get the radio class that owns @image_file"""
     if image_file.startswith("radioreference://"):
-        _, _, zipcode, username, password, country = image_file.split("/", 5)
+        _, _, zipcode, username, password = image_file.split("/", 4)
         rr = radioreference.RadioReferenceRadio(None)
-        rr.set_params(zipcode, username, password, country)
+        rr.set_params(zipcode, username, password)
         return rr
-
+    
     if image_file.startswith("rfinder://"):
         _, _, email, passwd, lat, lon, miles = image_file.split("/")
         rf = rfinder.RFinderRadio(None)
         rf.set_params((float(lat), float(lon)), int(miles), email, passwd)
         return rf
-
+    
     if os.path.exists(image_file) and icf.is_icf_file(image_file):
         tempf = tempfile.mktemp()
         icf_to_image(image_file, tempf)
-        LOG.info("Auto-converted %s -> %s" % (image_file, tempf))
+        print "Auto-converted %s -> %s" % (image_file, tempf)
         image_file = tempf
 
     if os.path.exists(image_file):
@@ -147,37 +125,9 @@ def get_radio_by_image(image_file):
     else:
         filedata = ""
 
-    data, metadata = chirp_common.FileBackedRadio._strip_metadata(filedata)
-
     for rclass in DRV_TO_RADIO.values():
         if not issubclass(rclass, chirp_common.FileBackedRadio):
             continue
-
-        # If no metadata, we do the old thing
-        if not metadata and rclass.match_model(filedata, image_file):
+        if rclass.match_model(filedata, image_file):
             return rclass(image_file)
-
-        meta_vendor = metadata.get('vendor')
-        meta_model = metadata.get('model')
-
-        meta_vendor, meta_model = MODEL_COMPAT.get((meta_vendor, meta_model),
-                                                   (meta_vendor, meta_model))
-
-        # If metadata, then it has to match one of the aliases or the parent
-        for alias in rclass.ALIASES + [rclass]:
-            if (alias.VENDOR == meta_vendor and alias.MODEL == meta_model):
-
-                class DynamicRadioAlias(rclass):
-                    VENDOR = meta_vendor
-                    MODEL = meta_model
-                    VARIANT = metadata.get('variant')
-
-                return DynamicRadioAlias(image_file)
-
-    if metadata:
-        e = errors.ImageMetadataInvalidModel("Unsupported model %s %s" % (
-            metadata.get("vendor"), metadata.get("model")))
-        e.metadata = metadata
-        raise e
-    else:
-        raise errors.ImageDetectFailed("Unknown file format")
+    raise errors.ImageDetectFailed("Unknown file format")
