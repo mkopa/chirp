@@ -1,6 +1,6 @@
 # CHIRP Project
 
-This is the official git repository for the
+This is the git mirror of Mercurial repository http://d-rats.com/hg/chirp.hg for the
 __[CHIRP](https://chirp.danplanet.com)__ project. Pull requests are accepted
 here, but for the moment, the main repository is still on mercurial.
 Changesets will be mirrored in both directions, but may not always happen
