@@ -13,28 +13,22 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import logging
 from chirp import chirp_common, errors
-
-LOG = logging.getLogger(__name__)
-
 try:
     from suds.client import Client
-    from suds import WebFault
     HAVE_SUDS = True
 except ImportError:
     HAVE_SUDS = False
 
 MODES = {
-    "FM":     "FM",
-    "AM":     "AM",
-    "FMN":    "NFM",
+    "FM"    : "FM",
+    "AM"    : "AM",
+    "FMN"   : "NFM",
     "D-STAR": "DV",
-    "USB":    "USB",
-    "LSB":    "LSB",
-    "P25":    "P25",
+    "USB"   : "USB",
+    "LSB"   : "LSB",
+    "P25"   : "P25",
 }
-
 
 class RadioReferenceRadio(chirp_common.NetworkSourceRadio):
     """RadioReference.com data source"""
@@ -49,61 +43,27 @@ class RadioReferenceRadio(chirp_common.NetworkSourceRadio):
 
         if not HAVE_SUDS:
             raise errors.RadioError(
-                "Suds library required for RadioReference.com import.\n" +
+                "Suds library required for RadioReference.com import.\n" + \
                 "Try installing your distribution's python-suds package.")
 
         self._auth = {"appKey": self.APPKEY, "username": "", "password": ""}
         self._client = Client(self.URL)
         self._freqs = None
         self._modes = None
-        self._zipcounty = None
-        self._country = None
+        self._zip = None
 
-    def set_params(self, zipcounty, username, password, country):
+    def set_params(self, zipcode, username, password):
         """Set the parameters to be used for a query"""
-        self._country = country
-        self._zipcounty = zipcounty
+        self._zip = zipcode
         self._auth["username"] = username
         self._auth["password"] = password
 
-    def do_getcanadacounties(self):
-        try:
-            service = self._client.service
-            provincelist = service.getCountryInfo(2, self._auth)
-            provinces = {}
-            clist = []
-            for province in provincelist:
-                provinces[province[2]] = province[0]
-                provinceinfo = service.getStateInfo(province[0], self._auth)
-                for county in provinceinfo.countyList:
-                    if (county[1] != 'UNKNOWN' and county[1] != 'N/A' and
-                            county[1] != 'Provincewide'):
-                        # some counties are actually cities but whatever fml
-                        clist.append([province[0], province[2],
-                                      county[0], county[1]])
-        except WebFault, err:
-            raise errors.RadioError(err)
-        return clist, provinces
-
     def do_fetch(self):
-        """Fetches frequencies for all subcategories in a county
-        (or zip if USA)."""
+        """Fetches frequencies for all subcategories in a county."""
         self._freqs = []
-        # if this method was accessed for the USA, use the zip; otherwise
-        # use the county ID
-        if self._country == 'US':
-            try:
-                service = self._client.service
-                zipcode = service.getZipcodeInfo(self._zipcounty, self._auth)
-                county = service.getCountyInfo(zipcode.ctid, self._auth)
-            except WebFault, err:
-                raise errors.RadioError(err)
-        if self._country == 'CA':
-            try:
-                service = self._client.service
-                county = service.getCountyInfo(self._zipcounty, self._auth)
-            except WebFault, err:
-                raise errors.RadioError(err)
+
+        zipcode = self._client.service.getZipcodeInfo(self._zip, self._auth)
+        county = self._client.service.getCountyInfo(zipcode.ctid, self._auth)
 
         status = chirp_common.Status()
         status.max = 0
@@ -112,9 +72,9 @@ class RadioReferenceRadio(chirp_common.NetworkSourceRadio):
         status.max += len(county.agencyList)
 
         for cat in county.cats:
-            LOG.debug("Fetching category:", cat.cName)
+            print "Fetching category:", cat.cName
             for subcat in cat.subcats:
-                LOG.debug("\t", subcat.scName)
+                print "\t", subcat.scName
                 result = self._client.service.getSubcatFreqs(subcat.scid,
                                                              self._auth)
                 self._freqs += result
@@ -126,12 +86,9 @@ class RadioReferenceRadio(chirp_common.NetworkSourceRadio):
             for cat in agency.cats:
                 status.max += len(cat.subcats)
             for cat in agency.cats:
-                LOG.debug("Fetching category:", cat.cName)
+                print "Fetching category:", cat.cName
                 for subcat in cat.subcats:
-                    try:
-                        LOG.debug("\t", subcat.scName)
-                    except AttributeError:
-                        pass
+                    print "\t", subcat.scName
                     result = self._client.service.getSubcatFreqs(subcat.scid,
                                                                  self._auth)
                     self._freqs += result
@@ -169,7 +126,7 @@ class RadioReferenceRadio(chirp_common.NetworkSourceRadio):
             mem.duplex = "split"
             mem.offset = chirp_common.parse_freq(str(freq["in"]))
         if freq.tone is not None:
-            if str(freq.tone) == "CSQ":  # Carrier Squelch
+            if str(freq.tone) == "CSQ": # Carrier Squelch
                 mem.tmode = ""
             else:
                 try:
@@ -183,7 +140,8 @@ class RadioReferenceRadio(chirp_common.NetworkSourceRadio):
                     mem.tmode = "DTCS"
                     mem.dtcs = int(tone)
                 else:
-                    LOG.error("Error: unsupported tone: %s" % freq)
+                    print "Error: unsupported tone"
+                    print freq
         try:
             mem.mode = self._get_mode(freq.mode)
         except KeyError:
@@ -207,15 +165,13 @@ def main():
     """
     Usage:
     cd ~/src/chirp.hg
-    python ./chirp/radioreference.py [USERNAME] [PASSWORD] \
-        [COUNTRY - 2 LETTER] [US ZIP(USA) OR COUNTY ID(CANADA)]
+    python ./chirp/radioreference.py [ZIPCODE] [USERNAME] [PASSWORD]
     """
     import sys
     rrr = RadioReferenceRadio(None)
-    rrr.set_params(username=sys.argv[1],
-                   password=sys.argv[2],
-                   country=sys.argv[3],
-                   zipcounty=sys.argv[4])
+    rrr.set_params(zipcode=sys.argv[1],
+                   username=sys.argv[2],
+                   password=sys.argv[3])
     rrr.do_fetch()
     print rrr.get_raw_memory(0)
     print rrr.get_memory(0)

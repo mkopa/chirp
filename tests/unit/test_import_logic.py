@@ -3,7 +3,6 @@ from chirp import import_logic
 from chirp import chirp_common
 from chirp import errors
 
-
 class FakeRadio(chirp_common.Radio):
     def __init__(self, arg):
         self.POWER_LEVELS = list([chirp_common.PowerLevel('lo', watts=5),
@@ -27,10 +26,8 @@ class FakeRadio(chirp_common.Radio):
         rf.has_rx_dtcs = self.HAS_RX_DTCS
         return rf
 
-
 class FakeDstarRadio(FakeRadio, chirp_common.IcomDstarSupport):
     pass
-
 
 class DstarTests(base.BaseTest):
     def _test_ensure_has_calls(self, mem,
@@ -90,7 +87,7 @@ class DstarTests(base.BaseTest):
         exp_rptcalls[4] = mem.dv_rpt2call
         self._test_ensure_has_calls(mem, ini_urcalls, ini_rptcalls,
                                     exp_urcalls, exp_rptcalls)
-
+        
     def test_ensure_has_calls_urcall_full(self):
         mem = chirp_common.DVMemory()
         mem.dv_urcall = 'KK7DS'
@@ -141,8 +138,7 @@ class DstarTests(base.BaseTest):
                           self._test_ensure_has_calls,
                           mem, ini_urcalls, ini_rptcalls,
                           exp_urcalls, exp_rptcalls)
-
-
+        
 class ImportFieldTests(base.BaseTest):
     def test_import_name(self):
         mem = chirp_common.Memory()
@@ -168,7 +164,7 @@ class ImportFieldTests(base.BaseTest):
 
     def test_import_power_no_dst(self):
         radio = FakeRadio(None)
-        src_rf = radio.get_features()  # Steal a copy before we stub out
+        src_rf = radio.get_features() # Steal a copy before we stub out
         self.mox.StubOutWithMock(radio, 'get_features')
         radio.get_features().AndReturn(chirp_common.RadioFeatures())
         self.mox.ReplayAll()
@@ -247,6 +243,7 @@ class ImportFieldTests(base.BaseTest):
         mem.freq = 18000000
         import_logic._import_mode(radio, None, mem)
         self.assertEqual(mem.mode, 'AM')
+
 
     def test_import_mode_invalid(self):
         radio = FakeRadio(None)
@@ -350,23 +347,23 @@ class ImportFieldTests(base.BaseTest):
                      chirp_common.Bank(src_bm, 3, '3'),
                      ]
 
-        self.mox.StubOutWithMock(dst_radio, 'get_mapping_models')
-        self.mox.StubOutWithMock(src_radio, 'get_mapping_models')
-        self.mox.StubOutWithMock(dst_bm, 'get_mappings')
-        self.mox.StubOutWithMock(src_bm, 'get_mappings')
-        self.mox.StubOutWithMock(dst_bm, 'get_memory_mappings')
-        self.mox.StubOutWithMock(src_bm, 'get_memory_mappings')
-        self.mox.StubOutWithMock(dst_bm, 'remove_memory_from_mapping')
-        self.mox.StubOutWithMock(dst_bm, 'add_memory_to_mapping')
+        self.mox.StubOutWithMock(dst_radio, 'get_bank_model')
+        self.mox.StubOutWithMock(src_radio, 'get_bank_model')
+        self.mox.StubOutWithMock(dst_bm, 'get_banks')
+        self.mox.StubOutWithMock(src_bm, 'get_banks')
+        self.mox.StubOutWithMock(dst_bm, 'get_memory_banks')
+        self.mox.StubOutWithMock(src_bm, 'get_memory_banks')
+        self.mox.StubOutWithMock(dst_bm, 'remove_memory_from_bank')
+        self.mox.StubOutWithMock(dst_bm, 'add_memory_to_bank')
 
-        dst_radio.get_mapping_models().AndReturn([dst_bm])
-        dst_bm.get_mappings().AndReturn(dst_banks)
-        src_radio.get_mapping_models().AndReturn([src_bm])
-        src_bm.get_mappings().AndReturn(src_banks)
-        src_bm.get_memory_mappings(src_mem).AndReturn([src_banks[0]])
-        dst_bm.get_memory_mappings(dst_mem).AndReturn([dst_banks[1]])
-        dst_bm.remove_memory_from_mapping(dst_mem, dst_banks[1])
-        dst_bm.add_memory_to_mapping(dst_mem, dst_banks[0])
+        dst_radio.get_bank_model().AndReturn(dst_bm)
+        dst_bm.get_banks().AndReturn(dst_banks)
+        src_radio.get_bank_model().AndReturn(src_bm)
+        src_bm.get_banks().AndReturn(src_banks)
+        src_bm.get_memory_banks(src_mem).AndReturn([src_banks[0]])
+        dst_bm.get_memory_banks(dst_mem).AndReturn([dst_banks[1]])
+        dst_bm.remove_memory_from_bank(dst_mem, dst_banks[1])
+        dst_bm.add_memory_to_bank(dst_mem, dst_banks[0])
 
         self.mox.ReplayAll()
 
