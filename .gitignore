@@ -14,7 +14,8 @@ archived_builds/
 .*\.pot$
 locale/.files
 MANIFEST
-
+.hg/
+.hgg/
 
 # for visual studio and visual studio code editors
 .vs/

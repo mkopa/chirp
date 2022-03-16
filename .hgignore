@@ -20,3 +20,5 @@ MANIFEST
 # for visual studio and visual studio code editors
 .vs/
 .vscode/
+# Default ignored files
+.idea/workspace.xml

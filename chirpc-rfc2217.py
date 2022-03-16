@@ -35,7 +35,7 @@ import sys
 import argparse
 import logging
 
-from chirp import logger
+# from chirp import logger
 from chirp.drivers import *
 from chirp import chirp_common, errors, directory, util
 
@@ -107,7 +107,7 @@ def parse_memory_number(radio, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    logger.add_version_argument(parser)
+#     logger.add_version_argument(parser)
     parser.add_argument("-s", "--serial", dest="serial",
                         default="mmap",
                         help="Serial port (default: mmap)")
@@ -192,7 +192,7 @@ if __name__ == "__main__":
                         action="store_true",
                         default=False,
                         help="Upload memory map to radio")
-    logger.add_arguments(parser)
+#     logger.add_arguments(parser)
     parser.add_argument("args", metavar="arg", nargs='*',
                         help="Some commands require additional arguments")
 
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     options = parser.parse_args()
     args = options.args
 
-    logger.handle_options(options)
+#     logger.handle_options(options)
 
     if options.list_radios:
         print "Supported Radios:\n\t", "\n\t".join(sorted(RADIOS.keys()))
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         start, end = rf.memory_bounds
         for i in range(start, end + 1):
             mem = radio.get_memory(i)
-            if mem.empty and not logger.is_visible(logging.INFO):
+            if mem.empty:
                 continue
             print mem
         sys.exit(0)
@@ -259,7 +259,7 @@ if __name__ == "__main__":
         rf = radio.get_features()
         for i in sorted(rf.valid_special_chans):
             mem = radio.get_memory(i)
-            if mem.empty and not logger.is_visible(logging.INFO):
+            if mem.empty:
                 continue
             print mem
         sys.exit(0)
